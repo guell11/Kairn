@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Kaggle Studio</title>
+  <link rel="icon" href="assets/penguin-guide.png">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="workspace.css">
+
+</head>
+<body>
+  <aside class="app-sidebar" aria-label="Navegação do Studio">
+    <div class="sidebar-brand">K<span>Kaggle Studio<small>GPU remota. Controle local.</small></span></div>
+    <nav class="rail-nav">
+      <button class="rail-button active" data-nav="model"><b>01</b><span>Modelo e runtime</span></button>
+      <button class="rail-button" data-nav="environment"><b>02</b><span>Iniciar no Kaggle</span></button>
+      <button class="rail-button" data-nav="connect"><b>03</b><span>Conectar API</span></button>
+      <button class="rail-button" data-nav="agents"><b>04</b><span>Agentes locais</span></button>
+      <button class="rail-button" data-nav="monitor"><b>↗</b><span>Monitor</span></button>
+    </nav>
+    <div class="rail-status" id="globalStatus" title="Status do gateway"><i></i><span>Offline</span></div>
+  </aside>
+
+  <main class="workspace">
+    <section class="studio-panel" aria-label="Assistente de configuração Kaggle Studio">
+      <header class="panel-header"><div class="wordmark"><strong>Seu workspace de inferência</strong><span>llama.cpp · T4 ×2</span></div><button class="button secondary" id="openKaggle">Abrir Kaggle ↗</button></header>
+      <div id="previewNotice" class="preview-banner" hidden>Prévia visual. Execute run.bat para gerar célula GitHub e conectar agentes locais.</div>
+      <div class="step-meter" aria-label="Etapa atual"><span data-meter="model"></span><span data-meter="environment"></span><span data-meter="connect"></span><span data-meter="agents"></span></div>
+      <section class="screen active" data-screen="welcome">
+        <div class="welcome-card"><div class="hero-copy"><p class="eyebrow">KAGGLE GPU → AGENTES LOCAIS</p><h1>Modelo no Kaggle.<br>Agente no PC.</h1><p>Configure runtime e abra Codex, Claude Code, OpenCode ou ZCode em um clique.</p></div><figure class="hero-mascot"><img src="assets/penguin-guide.png" alt="Mascote do Kaggle Studio"><figcaption>Mais poder<br>para suas<br>ideias</figcaption></figure></div>
+        <div class="notice notice-guide"><span class="guide-icon"><i class="ph ph-laptop"></i></span><div><strong>Antes de começar</strong><p>Abra Kaggle, ative <b>Internet</b> e selecione <b>2 × T4</b>.</p></div><i class="ph ph-caret-right notice-arrow"></i></div>
+        <button class="button primary full" data-next="model">Escolher modelo <span>→</span></button><p class="footnote">Uma decisão por vez. <span class="desktop-copy">Volte pela barra à esquerda.</span><span class="mobile-copy">Volte pelas opções abaixo.</span></p><div class="ai-tile" aria-hidden="true"><i class="ph ph-sparkle"></i><span>IA mais próxima<br>das suas ideias.</span></div>
+      </section>
+
+      <section class="screen" data-screen="model" hidden>
+        <div class="screen-heading"><p class="eyebrow">01 — MODELO</p><h2>Seu modelo, sua GPU.</h2><p>Escolha modelo. Ajustes recomendados já estão preenchidos.</p></div>
+        <div class="model-grid" id="modelGrid"></div>
+        <div class="notice compact"><span class="notice-icon">✓</span><p><b>CUDA prebuilt é o padrão.</b> llama.cpp oficial com versão e checksum fixos.</p></div>
+        <button class="button primary full" data-next="context">Continuar <span>→</span></button>
+      </section>
+
+      <section class="screen" data-screen="context" hidden>
+        <div class="screen-heading"><p class="eyebrow">02 — CONTEXTO</p><h2>Quanto cada agente pode enxergar?</h2><p>Contexto usa VRAM em cada slot. Comece com 16K.</p></div>
+        <div class="field-card"><div class="field-title"><label for="context">Contexto por geração</label><output id="contextDisplay">16K</output></div><div class="choice-row" data-preset-group="context"><button data-value="8192">8K</button><button data-value="16384">16K</button><button data-value="32768">32K</button><button data-value="65536">64K</button><button data-value="131072">128K</button></div><input id="context" class="range-input" type="number" min="2048" max="131072" step="1024" aria-label="Contexto customizado"></div>
+        <div class="notice compact" id="memoryWarning" hidden></div><button class="button primary full" data-next="output">Continuar <span>→</span></button>
+      </section>
+
+      <section class="screen" data-screen="output" hidden>
+        <div class="screen-heading"><p class="eyebrow">03 — SAÍDA</p><h2>Quanto o modelo pode responder?</h2><p>8K serve para mudanças grandes sem exagerar memória.</p></div>
+        <div class="field-card"><div class="field-title"><label for="output">Saída máxima</label><output id="outputDisplay">8K</output></div><div class="choice-row" data-preset-group="output"><button data-value="2048">2K</button><button data-value="4096">4K</button><button data-value="8192">8K</button><button data-value="16384">16K</button><button data-value="32768">32K</button></div><input id="output" class="range-input" type="number" min="256" max="32768" step="256" aria-label="Saída customizada"></div>
+        <button class="button primary full" data-next="review">Revisar configuração <span>→</span></button>
+      </section>
+
+      <section class="screen" data-screen="review" hidden>
+        <div class="screen-heading"><p class="eyebrow">04 — REVISÃO</p><h2>Pronto para iniciar.</h2><p>Comece com até 2 slots. Falta de VRAM reduz slots automaticamente.</p></div>
+        <div class="slots-row"><div><strong>Slots simultâneos</strong><span id="slotDescription">Definido automaticamente para este preset.</span></div><button class="switch is-on" id="automaticSlots" type="button" aria-pressed="true"><i></i><span>Auto</span></button><output id="summaryParallel">4</output></div><input id="parallel" class="range-input slots-input" type="number" min="1" max="8" aria-label="Slots simultâneos" hidden>
+        <div class="review-banner"><span>Modelo</span><strong id="reviewModel">—</strong><span>Contexto</span><strong id="reviewContext">—</strong><span>Saída</span><strong id="reviewOutput">—</strong></div>
+        <details class="advanced-options"><summary>Backend e opções avançadas</summary><div class="advanced-grid"><label>Backend<select id="backend"><option value="official-layer">CUDA prebuilt · recomendado</option><option value="auto">Automático · prebuilt</option><option value="official-tensor">CUDA prebuilt · tensor experimental</option><option value="wackmall">wackMall · requer release Linux no Kairn</option><option value="ik_llama">ik_llama · compilação CUDA</option></select></label><label>Reasoning<input id="reasoning_budget" type="number" min="0" max="32768" step="256"></label><label>Temperatura<input id="temperature" type="number" min="0" max="2" step="0.05"></label><label>Top K<input id="top_k" type="number" min="0" max="200"></label><label>Top P<input id="top_p" type="number" min="0" max="1" step="0.01"></label><label>Min P<input id="min_p" type="number" min="0" max="1" step="0.01"></label><label id="mtpField">MTP<input id="mtp_tokens" type="number" min="0" max="8"></label></div></details>
+        <button class="button primary full" data-next="environment">Gerar célula GitHub <span>→</span></button>
+      </section>
+
+      <section class="screen" data-screen="environment" hidden>
+        <div class="screen-heading"><p class="eyebrow">02 / EXECUTAR</p><h2>Uma célula. Direto do GitHub.</h2><p>Abra Kaggle, ative <b>Internet</b> e selecione <b>GPU T4 ×2</b>. Cole célula abaixo. Ela busca arquivos do Kairn, prepara ambiente e inicia API.</p></div>
+        <div class="tunnel-card"><label class="form-field"><span>Como expor API</span><select id="tunnel_mode"><option value="quick">Túnel rápido · testes sem streaming</option><option value="named">Cloudflare nomeado · agentes e streaming</option></select></label><label class="form-field" id="tunnelUrlField" hidden><span>URL pública configurada no Cloudflare</span><input id="tunnel_url" placeholder="https://llm.seudominio.com"></label><p id="tunnelHelp">Túnel rápido dispensa conta, mas não suporta SSE. Para agentes, escolha túnel nomeado.</p></div>
+        <div class="action-row"><button class="button primary" id="copyGitHub">Copiar célula GitHub</button><button class="button secondary" id="openKaggle2">Abrir Kaggle ↗</button></div><details class="code-card"><summary>Ver célula GitHub</summary><pre id="githubCode">Disponível no aplicativo desktop.</pre></details><p class="footnote">Fonte: guell11/Kairn · branch main. Requer projeto publicado. Prebuild wackMall Linux requer release gerada pelo workflow CUDA.</p><button class="button primary full" data-next="connect">Já tenho URL e chave →</button>
+        <details class="advanced-options"><summary>Alternativa offline: exportar notebook completo</summary><button class="button secondary" id="exportNotebook">Salvar notebook (opcional)</button><p class="footnote">Útil antes de publicar repositório. Contém mesmas correções de CUDA.</p></details>
+      </section>
+
+      <section class="screen" data-screen="cell1" hidden>
+        <div class="screen-heading"><p class="eyebrow">CÉLULA 1 / PREPARAR</p><h2>Preparação manual (alternativa)</h2><p>Cria venv próprio. Python global Kaggle permanece intacto.</p></div>
+        <details class="code-card"><summary>Ver código de preparação</summary><pre id="installCode">Disponível no aplicativo desktop.</pre></details>
+        <button class="button secondary full" id="copyCell1">Copiar célula 1 <span>▣</span></button>
+      </section>
+
+      <section class="screen" data-screen="cell2" hidden>
+        <div class="screen-heading"><p class="eyebrow">CÉLULA 2 / INICIAR</p><h2>Runtime manual (alternativa)</h2><p>Execute abaixo da primeira. Deixe célula ativa.</p></div>
+        <details class="code-card"><summary>Ver código do runtime</summary><pre id="runtimeCode">Disponível no aplicativo desktop.</pre></details>
+        <button class="button secondary full" id="copyCell2">Copiar célula 2 <span>▣</span></button><button class="button primary full" data-next="connect">Já tenho URL e chave →</button>
+      </section>
+
+      <section class="screen" data-screen="connect" hidden>
+        <div class="screen-heading"><p class="eyebrow">03 / CONECTAR</p><h2>Traga sua API para cá.</h2><p>Cole dados do notebook. Verificaremos saúde e modelo antes de liberar agentes.</p></div>
+        <div class="result-example"><code>BASE URL → https://…trycloudflare.com/v1</code><code>API KEY → ks_…</code></div>
+        <label class="form-field"><span>Base URL</span><input id="baseUrl" placeholder="https://…trycloudflare.com/v1" autocomplete="off"></label><label class="form-field"><span>API key</span><span class="password-wrap"><input id="apiKey" type="password" placeholder="ks_…" autocomplete="off"><button id="toggleKey" type="button" aria-label="Mostrar API key">◉</button></span></label>
+        <div class="notice compact"><span class="notice-icon">⌁</span><p>API key fica somente em memória nesta sessão.</p></div><p class="connection-feedback" id="connectionFeedback" role="status" aria-live="polite">Aguardando URL e chave.</p><button class="button primary full" id="connectApi">Testar e conectar <span>→</span></button><button class="text-button" data-copy="smoke" type="button">Copiar smoke test</button>
+      </section>
+
+      <section class="screen" data-screen="agents" hidden>
+        <div class="screen-heading agent-heading"><div><p class="eyebrow">04 / AGENTES</p><h2>Seu agente. Um clique.</h2><p>Detectamos ferramentas locais. Conexão validada libera configuração dos agentes.</p></div><span class="status-pill" id="agentConnectionStatus"><i></i> Gateway offline</span></div>
+        <section class="agent-summary" aria-label="Estado da integração"><div class="summary-icon"><i class="ph ph-plugs-connected"></i></div><div><strong id="agentSummaryTitle">Conecte API primeiro</strong><p id="agentSummaryText">URL e chave liberam configuração automática.</p></div><button class="text-button icon-text-button" id="refreshTools" type="button"><i class="ph ph-arrows-clockwise"></i> Atualizar</button></section>
+        <div class="agent-grid" id="agentGrid"></div><p class="footnote">Backups antes de editar configs. Codex grava token separado; ZCode Desktop salva chave no provider. Claude e OpenCode usam ambiente do processo.</p>
+        <button class="button primary full agent-primary" id="configureAll">Configurar todos disponíveis <span>→</span></button>
+      </section>
+
+      <section class="screen success-screen" data-screen="ready" hidden>
+        <img src="assets/penguin-guide.png" alt="Mascote do Kaggle Studio">
+        <p class="eyebrow">PRONTO</p><h2>Gateway conectado.</h2><p>Agentes instalados já podem usar modelo no Kaggle.</p>
+        <button class="button primary full" data-next="monitor">Abrir monitor <span>→</span></button>
+      </section>
+
+      <section class="screen" data-screen="monitor" hidden>
+        <div class="screen-heading monitor-heading"><div><p class="eyebrow">MONITOR</p><h2>Runtime em tempo real.</h2><p>Saúde, velocidade e uso. Só telemetria confirmada.</p></div><button class="button secondary monitor-refresh" id="testApi"><i class="ph ph-pulse"></i> Testar agora</button></div>
+        <section class="gateway-overview"><div class="gateway-state-icon"><i class="ph ph-cloud-slash"></i></div><div class="gateway-state-copy"><span>Gateway</span><strong id="metricOnline">Offline</strong><small id="metricMessage">API não conectada</small></div><div class="gateway-check"><span id="metricPulse" class="status-pill"><i></i> Sem sinal</span><small id="metricChecked">Ainda não verificado</small></div></section>
+        <div class="metric-grid"><article><span class="metric-icon"><i class="ph ph-gauge"></i></span><small>Throughput</small><strong><b id="metricTps">0</b> <em>tok/s</em></strong><div class="metric-track"><i id="metricTpsBar"></i></div><p>Média do servidor</p></article><article><span class="metric-icon"><i class="ph ph-hash-straight"></i></span><small>Tokens gerados</small><strong id="metricTokens">0</strong><p>Acumulado da sessão</p></article><article><span class="metric-icon"><i class="ph ph-brackets-curly"></i></span><small>Contexto servidor</small><strong id="metricContext">0</strong><p>Compartilhado entre slots</p></article></div>
+        <section class="runtime-strip"><div><span>Heartbeat</span><strong id="metricWatch">Inativo</strong></div><div><span>Verificação</span><strong id="metricCheckMode">Manual</strong></div><div><span>Origem</span><strong id="metricSource">Gateway</strong></div></section>
+      </section>
+    </section>
+  </main>
+  <div class="kaggle-drawer" id="kaggleHint"><span>Kaggle aberto ao lado</span><button id="hideKaggle" type="button">Fechar painel</button></div><div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js?v=9"></script>
+</body>
+</html>

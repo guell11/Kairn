@@ -1,0 +1,33 @@
+name: Build wackMall CUDA T4
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-wackmall-cuda.yml
+      - scripts/build_wackmall_cuda.sh
+permissions:
+  contents: write
+jobs:
+  linux-cuda:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    container: nvidia/cuda:12.4.1-devel-ubuntu22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned Linux CUDA binaries
+        shell: bash
+        run: bash scripts/build_wackmall_cuda.sh
+      - name: Publish Linux CUDA package
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: wackmall-main-b30-6aa17e3-cuda12.4-t4
+          name: wackMall b30 — Linux CUDA 12.4 / T4
+          body: >-
+            Kairn build of miltos22/llama-wackMall commit
+            6aa17e3a3d25104a9c786abb76e920d32faaae10.
+            Ubuntu 22.04, CUDA 12.4, sm_75. GPU execution is checked on Kaggle;
+            GitHub hosted build runner has no CUDA GPU.
+          files: |
+            dist/llama-wackmall-linux-cuda12.4-sm75.tar.gz
+            dist/llama-wackmall-linux-cuda12.4-sm75.tar.gz.sha256

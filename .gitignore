@@ -1,0 +1,9 @@
+.venv/
+.venv-test/
+.browser/
+.kaggle-studio/
+__pycache__/
+*.pyc
+*.bak
+*.kaggle-studio-*.bak
+.DS_Store
