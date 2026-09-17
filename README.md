@@ -1,81 +1,402 @@
-# Kairn / Kaggle Studio 4.2
+<div align="center">
 
-Kaggle T4 ×2 → llama.cpp → API → agentes locais.
+<!-- HERO / LOGO -->
 
-## Iniciar
+<img src="assets/kairn-hero.svg" width="900" alt="Kairn">
 
-Windows: `run.bat` ou `.\run.ps1`. Linux/macOS: `./run.sh`.
+<br>
 
-## Fluxo novo
+# Kairn
 
-1. **Modelo e runtime:** escolha preset, contexto e saída na mesma tela. Automático limita concorrência inicial a até 2 slots.
-2. **Iniciar no Kaggle:** clique **Copiar célula GitHub**, cole em notebook vazio e execute. Ative Internet e GPU T4 ×2. Célula busca código diretamente de `guell11/Kairn`, prepara dependências e inicia runtime. Não precisa upload de notebook.
-3. **Conectar API:** cole Base URL e API key. Teste consulta saúde e modelo em segundo plano, sem congelar interface.
-4. **Agentes locais:** configure ferramentas detectadas ou abra uma delas. Configuração só é liberada após conexão confirmada.
+### Turn free Kaggle GPUs into your local AI backend.
 
-Célula pronta para copiar: [`kaggle/start.py`](kaggle/start.py). Requer projeto completo publicado no repositório público `guell11/Kairn`, branch `main` (ou altere `REF`). Launcher resolve SHA do commit e baixa todos os arquivos dessa mesma versão. Modelo fica em `/kaggle/working/models`, fora da pasta do código, e é reutilizado após verificação.
+**2× NVIDIA T4 · llama.cpp · OpenAI-compatible API · Local Agents**
 
-Cópia não avança etapa. Notebook completo continua como alternativa antes da publicação:
+<br>
+
+<a href="#-quick-start">
+  <img src="https://img.shields.io/badge/⚡_START_NOW-111111?style=for-the-badge" alt="Start">
+</a>
+<a href="#-how-it-works">
+  <img src="https://img.shields.io/badge/HOW_IT_WORKS-222222?style=for-the-badge" alt="How it works">
+</a>
+<a href="#-agents">
+  <img src="https://img.shields.io/badge/LOCAL_AGENTS-333333?style=for-the-badge" alt="Agents">
+</a>
+
+<br><br>
+
+<img src="assets/kaggle.svg" height="26" alt="Kaggle">
+&nbsp;&nbsp;→&nbsp;&nbsp;
+<img src="assets/nvidia.svg" height="26" alt="NVIDIA">
+&nbsp;&nbsp;→&nbsp;&nbsp;
+<img src="assets/llamacpp.svg" height="26" alt="llama.cpp">
+&nbsp;&nbsp;→&nbsp;&nbsp;
+<img src="assets/kairn-mark.svg" height="26" alt="Kairn">
+&nbsp;&nbsp;→&nbsp;&nbsp;
+<strong>Your agents.</strong>
+
+</div>
+
+---
+
+## Your GPU doesn't have to be in your computer.
+
+Kairn turns a **Kaggle notebook with 2× NVIDIA T4 GPUs** into a remote inference backend that your local AI tools can use like a normal API.
+
+No local CUDA setup.
+
+No expensive GPU required.
+
+No server deployment ritual involving seventeen terminals and a sacrifice to the dependency gods.
+
+```text
+┌─────────────────┐
+│   YOUR MACHINE  │
+│                 │
+│ Codex · Claude  │
+│ OpenCode · etc. │
+└────────┬────────┘
+         │
+         │ OpenAI / Anthropic API
+         ▼
+┌─────────────────┐
+│      KAIRN      │
+│  Auth · Gateway │
+└────────┬────────┘
+         │
+         ▼
+┌──────────────────────────┐
+│          KAGGLE          │
+│                          │
+│  NVIDIA T4  +  NVIDIA T4 │
+│         llama.cpp        │
+└──────────────────────────┘
+```
+
+---
+
+# 🎬 See Kairn in action
+
+<div align="center">
+
+
+</div>
+
+---
+
+# ⚡ Quick Start
+
+## 01 — Launch Kairn
+
+<table>
+<tr>
+<td width="50%">
+
+### Windows
+
+```powershell
+run.bat
+```
+
+or
+
+```powershell
+.\run.ps1
+```
+
+</td>
+<td width="50%">
+
+### Linux / macOS
+
+```bash
+./run.sh
+```
+
+</td>
+</tr>
+</table>
+
+---
+
+## 02 — Pick your model
+
+<div align="center">
+<img src="assets/studio-preview.webp" width="850" alt="Kairn Studio">
+</div>
+
+Choose your:
+
+**Model → Context → Output → Backend**
+
+Kairn prepares an initial configuration for the available GPUs and limits initial concurrency when necessary.
+
+---
+
+## 03 — Give Kaggle the heavy lifting
+
+Click:
+
+> **Copy GitHub Cell**
+
+Create an empty Kaggle notebook and enable:
+
+```text
+Internet    ON
+Accelerator GPU T4 ×2
+```
+
+Paste.
+
+Run.
+
+That's it.
+
+The launcher:
+
+```text
+GitHub
+   ↓
+resolve commit
+   ↓
+download Kairn
+   ↓
+prepare runtime
+   ↓
+validate CUDA
+   ↓
+download / reuse model
+   ↓
+start llama.cpp
+   ↓
+start API
+```
+
+No notebook upload required.
+
+---
+
+## 04 — Connect
+
+Copy the generated:
+
+```text
+Base URL
+API Key
+```
+
+Paste them into Kairn Studio.
+
+Connection and model checks happen in the background, so the UI doesn't freeze while networking does networking things.
+
+Once validated:
+
+```text
+● API Connected
+● Model Ready
+● Agents Unlocked
+```
+
+---
+
+# ✦ One notebook. Two GPUs. Your tools.
+
+<div align="center">
+
+<img src="assets/pipeline.svg" width="900" alt="Kairn pipeline">
+
+</div>
+
+Kairn handles the annoying middle layer between your local tools and Kaggle:
+
+|                      |                                |
+| -------------------- | ------------------------------ |
+| ⚡ **2× T4**          | Multi-GPU inference            |
+| 🧠 **llama.cpp**     | CUDA runtime                   |
+| 🔌 **OpenAI API**    | Chat Completions + Responses   |
+| 💬 **Anthropic API** | Messages                       |
+| 🌐 **Gateway**       | Authentication + normalization |
+| ♻️ **Model cache**   | Reuse downloaded GGUFs         |
+| 🛡️ **Validation**   | CUDA and runtime checks        |
+| 🖥️ **Studio**       | Configure everything visually  |
+
+---
+
+# 🤖 Agents
+
+Connect local AI tools to the model running on Kaggle.
+
+<div align="center">
+
+<img src="assets/agents.svg" width="760" alt="Supported AI agents">
+
+</div>
+
+Kairn keeps existing configurations backed up before making changes.
+
+API keys aren't stored in Studio state.
+
+Tool-specific credentials remain isolated where required.
+
+---
+
+# 🧠 Built for dual T4
+
+The default runtime uses:
+
+```text
+llama.cpp b11009
+CUDA 12.8
+
+GPU 0 ─ NVIDIA T4
+GPU 1 ─ NVIDIA T4
+
+Strategy ─ layer split
+KV cache ─ q8_0
+```
+
+Before downloading or loading the model, Kairn verifies that CUDA actually sees both GPUs.
+
+```bash
+llama-server --list-devices
+```
+
+Because discovering that CUDA is broken **after downloading 30 GB** is an experience nobody needs twice.
+
+### Recommended starting context
+
+```text
+16K
+```
+
+128K may exceed available VRAM depending on model and configuration.
+
+If VRAM runs out, Kairn can reduce slots and retry after terminating the previous process.
+
+---
+
+# 🔥 Backends
+
+### llama.cpp
+
+**Default · Recommended**
+
+Official `b11009` runtime with CUDA 12.8.
+
+Supports:
+
+* Chat Completions
+* Responses
+* Messages
+* layer split
+* optional sampling flags
+* reasoning budget when supported
+
+---
+
+### wackMall
+
+**Experimental · T4 optimized**
+
+Kairn supports a dedicated Linux CUDA build targeting:
+
+```text
+Ubuntu 22.04
+CUDA 12.4
+Turing sm_75
+```
+
+The repository includes the workflow required to build the pinned wackMall commit and publish:
+
+```text
+wackmall-main-b30-6aa17e3-cuda12.4-t4
+```
+
+If the release isn't available, Kairn tells you.
+
+It does **not** quietly download a Windows binary and hope physics changes its mind.
+
+---
+
+### ik_llama
+
+Advanced experimental backend compiled inside Kaggle.
+
+Useful for experimentation, without guaranteed upstream parity.
+
+---
+
+# 🌎 Remote API
+
+For basic API testing, Kairn can work with a Cloudflare Quick Tunnel.
+
+For full agent streaming, use a **named Cloudflare Tunnel**.
+
+```text
+https://llm.yourdomain.com
+            │
+            ▼
+http://localhost:8000
+```
+
+Provide the tunnel token through the notebook prompt or:
+
+```bash
+TUNNEL_TOKEN
+```
+
+Kairn does not automatically create remote infrastructure or Cloudflare resources.
+
+---
+
+# 💾 Download once. Reuse.
+
+Models live outside the source directory:
+
+```text
+/kaggle/working/models
+```
+
+That means runtime updates don't automatically destroy your downloaded GGUF.
+
+Cached files are verified before reuse.
+
+---
+
+# 📓 Prefer a full notebook?
+
+You can still export one:
 
 ```powershell
 .venv/Scripts/python.exe scripts/export_notebook.py --model gemopus
 ```
 
-Arquivo pronto: `notebooks/kaggle-studio.ipynb`. Gera chave nova quando executado; não contém credenciais da sessão local.
+Output:
 
-## Túnel e streaming
-
-**Quick Tunnel / trycloudflare não suporta SSE**, segundo [documentação Cloudflare](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/). Serve para testes sem streaming. Health check aprovado não comprova compatibilidade de agentes. Studio mantém agentes bloqueados em URLs Quick Tunnel.
-
-Para agentes, selecione **Cloudflare nomeado** e informe URL HTTPS. Configure hostname no Cloudflare apontando para `http://localhost:8000`. Notebook solicita token com entrada oculta; também aceita variável `TUNNEL_TOKEN`. Conta e domínio Cloudflare são necessários.
-
-```powershell
-.venv/Scripts/python.exe scripts/export_notebook.py --tunnel-url https://llm.seudominio.com
+```text
+notebooks/kaggle-studio.ipynb
 ```
 
-Nenhum túnel ou recurso remoto é criado pelo Studio automaticamente.
+The notebook contains no local session credentials.
 
-## Correção: “no backends are loaded”
+A fresh API key is generated when it runs.
 
-Launcher com glibc privado executa `ld-linux`, alterando caminho percebido do executável. GGML procura plugins no diretório do executável e no diretório corrente. Agora launcher muda para pasta contendo `libggml-cuda.so` e plugins CPU antes de executar servidor. [Código upstream](https://github.com/ggml-org/llama.cpp/blob/b11009/ggml/src/ggml-backend-reg.cpp).
+---
 
-Cache antigo recebe launcher corrigido, sem apagar GGUF. `--help` sozinho não comprova CUDA: `--list-devices` precisa listar duas GPUs CUDA antes de baixar ou carregar modelo. Se validação falhar, diagnóstico aparece imediatamente. Contexto inicial recomendado: 16K; 128K pode exceder VRAM mesmo após correção de CUDA.
+# 🔍 Logs
 
-## llama-wackMall prebuilt
+When the universe decides today is the day CUDA develops opinions:
 
-Release [main-b30-6aa17e3](https://github.com/miltos22/llama-wackMall/releases/tag/main-b30-6aa17e3) oferece CUDA para **Windows**, sem pacote Linux CUDA. Pacote Ubuntu x64 dessa release não deve ser confundido com CUDA.
+```text
+/kaggle/working/llama_server.log
+/kaggle/working/fastapi_gateway.log
+/kaggle/working/cloudflared.log
+```
 
-Opção `wackmall` usa prebuild Linux específico do Kairn:
+---
 
-1. Publique projeto completo em `guell11/Kairn`, incluindo `.github/workflows/`.
-2. Workflow **Build wackMall CUDA T4** executa no primeiro push de seus arquivos para `main`, ou manualmente via Actions.
-3. Workflow compila commit fixo `6aa17e3a3d25104a9c786abb76e920d32faaae10`, Ubuntu 22.04, CUDA 12.4, T4 `sm_75`, e publica release `wackmall-main-b30-6aa17e3-cuda12.4-t4`.
-4. Escolha backend wackMall no Studio ou `CONFIG['backend'] = 'wackmall'` na célula. Kaggle baixa pacote, valida SHA-256 publicado pelo GitHub e verifica GPUs.
-
-Sem release publicada, opção informa passo necessário e não baixa binário Windows nem compila silenciosamente. Build e release estão preparados neste projeto, ainda não executados remotamente nesta revisão. Runtime oficial continua disponível enquanto isso.
-
-## Runtime
-
-- Padrão: llama.cpp oficial `b11009`, CUDA 12.8, **layer split** desde primeiro boot. Arquivos verificados com SHA-256 da release oficial.
-- Backend oficial fornece Chat Completions, Responses e Messages nativos. Gateway autentica e normaliza limites sem converter Messages desnecessariamente.
-- Tensor split é experimental, com KV `f16`. Layer usa KV `q8_0`; consumo real varia por modelo.
-- `ik_llama` é opção avançada, compilada localmente no Kaggle. Não há garantia de paridade com upstream.
-- Flags opcionais são verificadas contra `llama-server --help`. Temperatura, Top K/P, Min P e orçamento de reasoning chegam ao comando quando suportados.
-- Falta de VRAM reduz slots. Processo anterior termina antes de retry. Outros erros são exibidos.
-- Runtime roda no Python do venv. Interromper célula encerra grupo de processos, inclusive gateway e túnel.
-- Sessão continua sujeita a limites do Kaggle. Heartbeat não evita encerramento pela plataforma.
-
-Logs no Kaggle: `/kaggle/working/llama_server.log`, `fastapi_gateway.log`, `cloudflared.log`.
-
-## Configurações locais
-
-Backups são criados antes das mudanças. Estado do Studio não grava API key. Codex usa arquivo separado de token; Claude/OpenCode recebem chave por ambiente ao abrir; ZCode Desktop mantém chave no provider. Configurações anteriores são preservadas pelas integrações.
-
-## Projetos prontos pesquisados
-
-[Comparação de quatro alternativas e fontes](docs/KAGGLE-ALTERNATIVES.md). Melhor encaixe por escopo encontrado: [Tahsine/kaggle-llm-server](https://github.com/Tahsine/kaggle-llm-server). Pesquisa documental; nenhum desses projetos foi executado na sua conta.
-
-## Validar
+# 🧪 Development
 
 ```powershell
 .venv/Scripts/python.exe -m pip install -r requirements-dev.txt
@@ -84,8 +405,64 @@ Backups são criados antes das mudanças. Estado do Studio não grava API key. C
 node --check ui/app.js
 ```
 
-Testes locais verificam comandos, notebooks, configurações e respostas HTTP simuladas. Boot CUDA, download dos modelos e uso ponta a ponta dos agentes ainda precisam de execução real no Kaggle.
+Local tests cover commands, notebooks, configuration and simulated HTTP responses.
 
-## Estrutura
+Actual CUDA boot, model downloads and end-to-end agent usage require a real Kaggle session.
 
-`main.py`: desktop e bridge Qt. `connection.py`: diagnóstico HTTP fora da interface. `runtime_builder.py`: células e notebook. `runtime_support.py`: argumentos e encerramento. `kaggle_gateway.py`: autenticação/proxy. `ui/`: interface. `scripts/export_notebook.py`: exportação via CLI.
+---
+
+# 🗂️ Architecture
+
+```text
+Kairn
+│
+├── main.py
+│   └── Desktop + Qt bridge
+│
+├── connection.py
+│   └── API diagnostics
+│
+├── runtime_builder.py
+│   └── Kaggle cells + notebooks
+│
+├── runtime_support.py
+│   └── Runtime arguments + processes
+│
+├── kaggle_gateway.py
+│   └── Authentication + proxy
+│
+├── kaggle/
+│   └── Kaggle bootstrap
+│
+├── ui/
+│   └── Studio interface
+│
+└── scripts/
+    └── Development utilities
+```
+
+---
+
+<div align="center">
+
+<img src="assets/kairn-footer.svg" width="700" alt="Kairn">
+
+<br>
+
+## Stop buying hardware for experiments.
+
+### Borrow the cloud's.
+
+**Kaggle provides the GPUs.
+llama.cpp runs the model.
+Kairn connects everything.**
+
+<br>
+
+`2× T4` · `Local Agents` · `OpenAI API` · `Anthropic API`
+
+<br><br>
+
+**KAIRN**
+
+</div>
