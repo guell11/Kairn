@@ -3,7 +3,7 @@
 
 def llama_command(server, model, alias, context, slots, split, help_text,
                   temperature=0.6, top_k=40, top_p=0.95, min_p=0.05,
-                  reasoning_budget=3072):
+                  reasoning_budget=3072, speculation="auto", draft_tokens=4):
     import re
     flags = set(re.findall(r"--[a-z][a-z0-9-]*", help_text))
     command = [str(server), "--model", str(model), "--alias", alias,
@@ -22,6 +22,17 @@ def llama_command(server, model, alias, context, slots, split, help_text,
             command += [flag, str(value)]
     if "--flash-attn" in flags:
         command += ["--flash-attn", "on"] if split != "graph" else ["--flash-attn"]
+    # Upstream llama.cpp n-gram speculation needs no second model. Enable only
+    # when the compiled server advertises the exact options. Older forks
+    # safely keep normal decoding. N-gram has its own draft-length parameter.
+    advertised_ngram = "--spec-type" in flags and "ngram-simple" in (help_text or "")
+    if speculation == "ngram" and not advertised_ngram:
+        raise RuntimeError("Speculação ngram solicitada, mas llama-server não anuncia ngram-simple.")
+    if speculation != "off" and not any(flag in command for flag in ("--model-draft", "--spec-type")):
+        if advertised_ngram:
+            command += ["--spec-type", "ngram-simple"]
+            if "--spec-ngram-simple-size-m" in flags:
+                command += ["--spec-ngram-simple-size-m", str(max(1, int(draft_tokens)))]
     return command
 
 

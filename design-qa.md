@@ -1,3 +1,13 @@
+# QA 4.3 — runtime e integrações
+
+- Catálogo exibe VELUM em Q8_0 e Bonsai com backend PrismML obrigatório; configuração não permite backend incompatível.
+- Célula única busca o commit inteiro no GitHub e valida manifesto/arquivos antes de executar. O catálogo antigo `786544ea` não contém Bonsai e deve ser substituído no repositório publicado.
+- Alterar parâmetros de geração mantém o GGUF no cache compartilhado; novo download só ocorre em nova sessão sem armazenamento persistente.
+- Conectar executa probe real de cadência SSE. Agentes só ficam disponíveis quando lotes chegam pela mesma requisição; Quick Tunnel não recebe garantia prévia.
+- Codex, Claude Code e OpenCode recebem configuração automática apenas após probe aprovado, com tokens em arquivos protegidos persistentes.
+- Especulação `auto` seleciona `ngram-simple` quando suportado pelo binário. Não há alegação de MTP/DFlash universal.
+- 67 testes locais passam, incluindo transporte HTTP em lotes e contratos de runtime. Nenhuma execução real em GPU T4, Kaggle ou túnel Cloudflare foi feita.
+
 # Atualização 4.2 — GitHub e CUDA
 
 - Verificada etapa “Uma célula. Direto do GitHub.” com ação principal “Copiar célula GitHub”.

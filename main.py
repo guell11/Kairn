@@ -16,7 +16,7 @@ from PyQt6.QtWebChannel import QWebChannel
 from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWidgets import QApplication, QMainWindow, QSplitter, QFileDialog
-from connection import normalize_url, probe_endpoint
+from connection import describe_probe, normalize_url, probe_endpoint
 
 from integrations import (
     Endpoint,
@@ -30,6 +30,7 @@ from integrations import (
     launch_env,
 )
 from models_catalog import MODELS, public_catalog
+from localization import localize_message, normalize_language, tr
 from runtime_builder import RuntimeBuilder
 from state_store import ACCELERATOR_PROFILE, SETUP_STAGES, AppState, StateStore
 
@@ -48,7 +49,7 @@ OPTION_LIMITS = {
     "min_p": (0.0, 1.0, float),
     "reasoning_budget": (0, 32768, int),
 }
-VALID_BACKENDS = {"auto", "ik_llama", "official-layer", "official-tensor", "wackmall"}
+VALID_BACKENDS = {"auto", "ik_llama", "official-layer", "official-tensor", "wackmall", "prism-ml"}
 
 
 class BrowserPage(QWebEnginePage):
@@ -59,15 +60,15 @@ class BrowserPage(QWebEnginePage):
 class ProbeWorker(QThread):
     result = pyqtSignal(dict)
 
-    def __init__(self, url, key, parent=None):
+    def __init__(self, url, key, language="pt-BR", verify_stream=False, parent=None):
         super().__init__(parent)
-        self.url, self.key = url, key
+        self.url, self.key, self.language, self.verify_stream = url, key, language, verify_stream
 
     def run(self):
         try:
-            result = probe_endpoint(self.url, self.key)
+            result = probe_endpoint(self.url, self.key, self.language, self.verify_stream)
         except Exception:
-            result = {"online": False, "message": "Falha no diagnóstico. Confira URL e tente novamente."}
+            result = {"online": False, "message": tr(self.language, "diagnostic_failed")}
         self.result.emit(result)
 
 
@@ -93,15 +94,24 @@ class Bridge(QObject):
         )
 
     @pyqtSlot(str)
+    def setLanguage(self, language: str) -> None:
+        self.window.state.language = normalize_language(language)
+        self.window.persist()
+        self.window.emit_state(include_catalog=True)
+        self.window.emit_metrics()
+
+    @pyqtSlot(str)
     def selectModel(self, key: str) -> None:
         if key not in MODELS:
-            self.toast.emit("Modelo desconhecido", False)
+            self.toast.emit(tr(self.window.state.language, "unknown_model"), False)
             return
         model = MODELS[key]
         state = self.window.state
         state.model = key
         state.context = model["context"]
         state.output = model["output"]
+        required = model.get("required_backend")
+        state.backend = required or ("official-layer" if state.backend == "prism-ml" else state.backend)
         if state.parallel_auto:
             state.parallel = self.window.recommended_slots()
         # Preserve explicitly chosen backend when switching model.
@@ -113,10 +123,10 @@ class Bridge(QObject):
         try:
             data = json.loads(payload)
         except ValueError:
-            self.toast.emit("Configuração inválida", False)
+            self.toast.emit(tr(self.window.state.language, "invalid_config"), False)
             return
         if not isinstance(data, dict):
-            self.toast.emit("Configuração inválida", False)
+            self.toast.emit(tr(self.window.state.language, "invalid_config"), False)
             return
 
         for key, (minimum, maximum, cast) in OPTION_LIMITS.items():
@@ -129,12 +139,19 @@ class Bridge(QObject):
             setattr(self.window.state, key, max(minimum, min(maximum, value)))
 
         backend = str(data.get("backend", self.window.state.backend))
+        required = MODELS.get(self.window.state.model, {}).get("required_backend")
+        if required:
+            backend = required
+        elif backend == "prism-ml":
+            backend = "official-layer"
         if backend in VALID_BACKENDS:
             self.window.state.backend = backend
         if data.get("tunnel_mode") in {"quick", "named"}:
             self.window.state.tunnel_mode = data["tunnel_mode"]
         if "tunnel_url" in data:
             self.window.state.tunnel_url = str(data["tunnel_url"]).strip()
+        if data.get("speculation") in {"auto", "off", "ngram"}:
+            self.window.state.speculation = data["speculation"]
 
         if self.window.state.parallel_auto:
             self.window.state.parallel = self.window.recommended_slots()
@@ -156,7 +173,7 @@ class Bridge(QObject):
     @pyqtSlot(str)
     def setSetupStage(self, stage: str) -> None:
         if not self.window.set_stage(stage):
-            self.toast.emit("Etapa de configuração inválida", False)
+            self.toast.emit(tr(self.window.state.language, "invalid_stage"), False)
             return
         self.window.persist()
         self.window.emit_state()
@@ -173,7 +190,7 @@ class Bridge(QObject):
         try:
             return self.window.generated_code(kind)
         except Exception as exc:
-            self.toast.emit(str(exc), False)
+            self.toast.emit(localize_message(str(exc), self.window.state.language), False)
             return ""
 
     @pyqtSlot(str, result=bool)
@@ -181,28 +198,29 @@ class Bridge(QObject):
         text = self.code(kind)
         if text:
             QApplication.clipboard().setText(text)
-            self.toast.emit("Copiado para a área de transferência", True)
+            self.toast.emit(tr(self.window.state.language, "copied"), True)
             return True
         return False
 
     @pyqtSlot()
     def exportNotebook(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self.window, "Salvar notebook Kaggle", "kaggle-studio.ipynb", "Notebook (*.ipynb)")
+        path, _ = QFileDialog.getSaveFileName(self.window, tr(self.window.state.language, "save_notebook"), "kaggle-studio.ipynb", "Notebook (*.ipynb)")
         if not path:
             return
         try:
             Path(path).write_text(self.window.builder.notebook(MODELS[self.window.state.model], self.window.state), "utf-8")
-            self.toast.emit("Notebook salvo. Importe no Kaggle e execute duas células.", True)
+            self.toast.emit(tr(self.window.state.language, "notebook_saved"), True)
         except Exception as exc:
-            self.toast.emit(f"Falha ao exportar: {exc}", False)
+            self.toast.emit(tr(self.window.state.language, "export_failed", error=exc), False)
 
     @pyqtSlot()
     def testApi(self) -> None:
-        self.window.start_probe()
+        self.window.start_probe(connect=True)
 
     @pyqtSlot(str)
     def configureTool(self, tool: str) -> None:
         result = self.window.configure_tool(tool)
+        result["message"] = localize_message(result["message"], self.window.state.language)
         self.toast.emit(result["message"], result["ok"])
         self.stateChanged.emit(json.dumps({
             "state": self.window.public_state(),
@@ -214,7 +232,7 @@ class Bridge(QObject):
         results = self.window.configure_all()
         count = sum(1 for result in results if result["ok"])
         self.toast.emit(
-            f"{count}/{len(results)} integrações configuradas",
+            tr(self.window.state.language, "configured", count=count, total=len(results)),
             bool(results) and count == len(results),
         )
         if results and count == len(results):
@@ -228,6 +246,7 @@ class Bridge(QObject):
     @pyqtSlot(str)
     def disconnectTool(self, tool: str) -> None:
         result = disconnect_one(tool).dict()
+        result["message"] = localize_message(result["message"], self.window.state.language)
         self.toast.emit(result["message"], result["ok"])
         self.stateChanged.emit(
             json.dumps({"tools": self.window.tool_status()}, ensure_ascii=False)
@@ -237,7 +256,7 @@ class Bridge(QObject):
     def disconnectAll(self) -> None:
         results = [result.dict() for result in disconnect_all()]
         ok = sum(1 for result in results if result["ok"])
-        self.toast.emit(f"{ok}/{len(results)} integrações desconectadas", ok == len(results))
+        self.toast.emit(tr(self.window.state.language, "disconnected", count=ok, total=len(results)), ok == len(results))
         self.stateChanged.emit(
             json.dumps({"tools": self.window.tool_status()}, ensure_ascii=False)
         )
@@ -245,7 +264,7 @@ class Bridge(QObject):
     @pyqtSlot(str)
     def launch(self, tool: str) -> None:
         ok, message = self.window.launch_tool(tool)
-        self.toast.emit(message, ok)
+        self.toast.emit(localize_message(message, self.window.state.language), ok)
 
     @pyqtSlot()
     def openKaggle(self) -> None:
@@ -264,7 +283,7 @@ class Bridge(QObject):
         elif target == "reset-kaggle":
             self.window.reset_kaggle()
         else:
-            self.toast.emit("Destino de navegação inválido", False)
+            self.toast.emit(tr(self.window.state.language, "invalid_navigation"), False)
 
     @pyqtSlot(result=str)
     def restore(self) -> str:
@@ -289,17 +308,23 @@ class Window(QMainWindow):
         self.probe_busy = False
         self.connection_verified = False
         self.remote_model = ""
-        self.last_metrics = {"online": False, "message": "API não conectada"}
         self.probe_worker = None
+        self.configuration_results = {}
 
         self.store = StateStore(ROOT / ".kaggle-studio" / "state.json")
         self.state = self.store.load()
+        self.last_metrics = {"online": False, "message": tr(self.state.language, "offline"), "agents_available": False}
         if self.state.base_url and not re.match(r"^https?://", self.state.base_url):
             self.state.base_url = ""
         self.runtime_key = "ks_" + secrets.token_urlsafe(24)
         if self.state.model not in MODELS:
             self.state.model = "gemopus"
         if self.state.backend not in VALID_BACKENDS:
+            self.state.backend = "official-layer"
+        required = MODELS.get(self.state.model, {}).get("required_backend")
+        if required:
+            self.state.backend = required
+        elif self.state.backend == "prism-ml":
             self.state.backend = "official-layer"
         if self.state.parallel_auto:
             self.state.parallel = self.recommended_slots()
@@ -353,6 +378,10 @@ class Window(QMainWindow):
         state["serverContext"] = self.state.context * self.state.parallel
         state["recommendedSlots"] = self.recommended_slots()
         state["resumeStage"] = self.resume_stage()
+        state["configurationResults"] = [
+            {**result, "message": localize_message(result["message"], self.state.language)}
+            for result in self.configuration_results.values()
+        ]
         return state
 
     def recommended_slots(self) -> int:
@@ -404,14 +433,19 @@ class Window(QMainWindow):
             "gateway": metrics,
         }
 
-    def emit_state(self) -> None:
+    def emit_state(self, include_catalog: bool = False) -> None:
+        payload = {"state": self.public_state()}
+        if include_catalog:
+            payload["models"] = public_catalog()
         self.bridge.stateChanged.emit(
-            json.dumps({"state": self.public_state()}, ensure_ascii=False)
+            json.dumps(payload, ensure_ascii=False)
         )
 
     def set_endpoint(self, url: str, key: str) -> None:
         self.connection_verified = False
         self.remote_model = ""
+        self.last_metrics = {"online": False, "message_code": "offline"}
+        self.configuration_results.clear()
         try:
             url = normalize_url(url)
         except ValueError:
@@ -432,7 +466,7 @@ class Window(QMainWindow):
             return
         self.probe_busy = True
         self.emit_state()
-        worker = ProbeWorker(self.state.base_url, self.api_key, self)
+        worker = ProbeWorker(self.state.base_url, self.api_key, self.state.language, connect, self)
         self.probe_worker = worker
         worker.result.connect(lambda result: self.finish_probe(result, connect))
         worker.finished.connect(worker.deleteLater)
@@ -440,22 +474,27 @@ class Window(QMainWindow):
 
     def finish_probe(self, result, connect=False):
         self.probe_busy = False
+        if not connect and result.get("online") and self.last_metrics.get("stream_verified"):
+            result["stream_verified"] = True
+            result["agents_available"] = True
+        result["message"] = describe_probe(result, self.state.language)
         self.last_metrics = result
         self.connection_verified = bool(result.get("online"))
         self.remote_model = result.get("model", "")
         if connect and self.connection_verified and result.get("agents_available"):
+            self.configure_all()
             self.set_stage("agents")
             self.persist()
         if connect:
-            self.bridge.toast.emit(result["message"], self.connection_verified)
-        self.emit_state()
+            self.bridge.toast.emit(result["message"], bool(result.get("agents_available")))
+        self.bridge.stateChanged.emit(json.dumps({"state": self.public_state(), "tools": self.tool_status()}, ensure_ascii=False))
         self.bridge.metricsChanged.emit(json.dumps(result, ensure_ascii=False))
 
     def generated_code(self, kind: str) -> str:
         if kind == "github":
             return self.builder.github_cell(MODELS[self.state.model], self.state)
         if kind == "install":
-            return self.builder.install_cell()
+            return self.builder.install_cell(language=self.state.language)
         if kind == "runtime":
             return self.builder.runtime_cell(
                 MODELS[self.state.model],
@@ -464,7 +503,7 @@ class Window(QMainWindow):
             )
         if kind == "smoke":
             if not self.state.base_url or not self.api_key:
-                return "# Conecte a API primeiro"
+                return tr(self.state.language, "code_api")
             return (
                 "curl -sS "
                 + shlex.quote(self.state.base_url.removesuffix("/v1") + "/health")
@@ -480,22 +519,25 @@ class Window(QMainWindow):
         }
 
     def check_api(self) -> tuple[bool, str]:
-        result = probe_endpoint(self.state.base_url, self.api_key)
+        result = probe_endpoint(self.state.base_url, self.api_key, self.state.language)
         return result['online'], result['message']
 
     def metrics(self) -> dict:
-        return self.last_metrics
+        return {**self.last_metrics, "message": describe_probe(self.last_metrics, self.state.language)}
 
     def emit_metrics(self) -> None:
         self.bridge.metricsChanged.emit(json.dumps(self.metrics(), ensure_ascii=False))
 
     def endpoint(self) -> Endpoint:
+        total = self.last_metrics.get("context")
+        slots = self.last_metrics.get("slots")
+        actual_context = int(total) // int(slots) if isinstance(total, (int, float)) and isinstance(slots, (int, float)) and total > 0 and slots > 0 else self.state.context
         return Endpoint(
             self.state.base_url,
             self.api_key,
             self.remote_model or MODELS[self.state.model]["model_id"],
-            context=self.state.context,
-            output=self.state.output,
+            context=actual_context,
+            output=min(self.state.output, actual_context - 1, self.last_metrics.get("max_output") or self.state.output),
         )
 
     def configure_tool(self, tool: str) -> dict:
@@ -504,10 +546,12 @@ class Window(QMainWindow):
                 "tool": tool,
                 "ok": False,
                 "path": "",
-                "message": "Conecte API por túnel com suporte a SSE antes de configurar agentes.",
+                "message": tr(self.state.language, "connect_sse"),
                 "backup": "",
             }
-        return configure_one(tool, self.endpoint()).dict()
+        result = configure_one(tool, self.endpoint()).dict()
+        self.configuration_results[tool] = result
+        return result
 
     def configure_all(self) -> list[dict]:
         if not self.connection_verified or not self.last_metrics.get("agents_available"):
@@ -516,12 +560,12 @@ class Window(QMainWindow):
                     "tool": "all",
                     "ok": False,
                     "path": "",
-                    "message": "Conecte a API do Kaggle primeiro",
+                    "message": tr(self.state.language, "connect_kaggle"),
                     "backup": "",
                 }
             ]
         installed = [name for name, status in self.tool_status().items() if status["installed"]]
-        return [configure_one(name, self.endpoint()).dict() for name in installed]
+        return [self.configure_tool(name) for name in installed]
 
     def tool_status(self) -> dict:
         home = Path.home()
@@ -567,7 +611,7 @@ class Window(QMainWindow):
 
         executable, args = self._command(tool)
         if not executable:
-            return False, f"{tool} não encontrado no PATH; config foi gravado mesmo assim"
+            return False, tr(self.state.language, "not_found", tool=tool)
 
         env = launch_env(self.endpoint())
         try:
@@ -614,9 +658,9 @@ class Window(QMainWindow):
                 process = subprocess.Popen(command, env=env, cwd=ROOT)
 
             self.processes.append(process)
-            return True, f"{tool} iniciado com o gateway Kaggle"
+            return True, tr(self.state.language, "launched", tool=tool)
         except Exception as exc:
-            return False, f"Falha ao abrir {tool}: {str(exc)[:100]}"
+            return False, tr(self.state.language, "launch_failed", tool=tool, error=str(exc)[:100])
 
     def open_kaggle(self) -> None:
         self.browser.show()
@@ -632,7 +676,7 @@ class Window(QMainWindow):
 
     def closeEvent(self, event) -> None:
         if self.probe_busy:
-            self.bridge.toast.emit("Aguarde teste de conexão terminar antes de fechar.", False)
+            self.bridge.toast.emit(tr(self.state.language, "wait_probe"), False)
             event.ignore()
             return
         for process in self.processes:

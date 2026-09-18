@@ -3,6 +3,8 @@
 # =====================================================================
 
 MODEL = "alztrk/Ornith-1.5-35B-A3B-Abliterated-GGUF"
+MODEL_SIZE = None
+MODEL_SHA256 = ""
 
 # Repo ou link direto do MTP.
 # "" = desativado
@@ -44,6 +46,8 @@ DEFAULT_MIN_P = 0.05
 MTP_TOKENS = 4
 MTP_HEADS = 1
 MTP_P_MIN = 0.0
+# auto selects ngram speculation when this server advertises it; off disables it.
+SPECULATION = "auto"
 
 
 # =====================================================================
@@ -933,6 +937,7 @@ def choose_gguf(
     )
 
 
+
     print(
         "✅ GGUF:",
         selected,
@@ -993,9 +998,7 @@ def direct_download(
         "revision"
     ]
 
-    expected_size = info[
-        "size"
-    ]
+    expected_size = info["size"]
 
 
     repo_dir = (
@@ -1038,11 +1041,7 @@ def direct_download(
         )
 
 
-        if (
-            expected_size is None
-            or
-            actual == expected_size
-        ):
+        if expected_size is None or destination.stat().st_size == expected_size:
 
             print()
             print(
@@ -1056,10 +1055,7 @@ def direct_download(
             return destination
 
 
-        print(
-            "🧹 Arquivo existente "
-            "está incompleto."
-        )
+        print("🧹 Arquivo existente está incompleto.")
 
         destination.unlink()
 

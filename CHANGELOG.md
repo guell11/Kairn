@@ -1,3 +1,13 @@
+## 4.3 — 2026-09-18
+
+- VELUM fixado em GGUF `Q8_0`; Bonsai Abliterated usa fork PrismML fixado e catálogo próprio.
+- Célula GitHub valida `runtime-manifest.json` e SHA dos arquivos antes de iniciar; SHA antigo sem Bonsai falha com diagnóstico claro.
+- Cache de pesos fica fora do checkout em `/kaggle/working/models` e reaproveita modelo ao mudar contexto, temperatura ou sampling.
+- Gateway mantém uma requisição aberta e agrupa bytes SSE por aproximadamente 4 s; compatibilidade de túnel é liberada somente após probe de cadência.
+- Auto configuração de Codex, Claude Code e OpenCode usa credenciais persistentes protegidas após conexão validada.
+- Especulação automática usa `ngram-simple` somente quando anunciada pelo `llama-server`; MTP/DFlash não são simulados.
+- Nenhuma GPU T4 ou boot Kaggle real foi executado nesta revisão.
+
 ## 4.2 — 2026-09-17
 
 - Launcher CUDA muda para diretório dos plugins GGML, inclusive reparando cache anterior.

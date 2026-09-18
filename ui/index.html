@@ -25,7 +25,7 @@
 
   <main class="workspace">
     <section class="studio-panel" aria-label="Assistente de configuração Kaggle Studio">
-      <header class="panel-header"><div class="wordmark"><strong>Seu workspace de inferência</strong><span>llama.cpp · T4 ×2</span></div><button class="button secondary" id="openKaggle">Abrir Kaggle ↗</button></header>
+      <header class="panel-header"><div class="wordmark"><strong>Seu workspace de inferência</strong><span>llama.cpp · T4 ×2</span></div><div class="header-actions"><label class="language-picker" for="languageSelect"><span>Idioma</span><select id="languageSelect" aria-label="Idioma"><option value="pt-BR">PT</option><option value="en">EN</option></select></label><button class="button secondary" id="openKaggle">Abrir Kaggle ↗</button></div></header>
       <div id="previewNotice" class="preview-banner" hidden>Prévia visual. Execute run.bat para gerar célula GitHub e conectar agentes locais.</div>
       <div class="step-meter" aria-label="Etapa atual"><span data-meter="model"></span><span data-meter="environment"></span><span data-meter="connect"></span><span data-meter="agents"></span></div>
       <section class="screen active" data-screen="welcome">
@@ -37,7 +37,7 @@
       <section class="screen" data-screen="model" hidden>
         <div class="screen-heading"><p class="eyebrow">01 — MODELO</p><h2>Seu modelo, sua GPU.</h2><p>Escolha modelo. Ajustes recomendados já estão preenchidos.</p></div>
         <div class="model-grid" id="modelGrid"></div>
-        <div class="notice compact"><span class="notice-icon">✓</span><p><b>CUDA prebuilt é o padrão.</b> llama.cpp oficial com versão e checksum fixos.</p></div>
+        <div class="notice compact"><span class="notice-icon">✓</span><p id="modelBackendNotice"><b>CUDA prebuilt é o padrão.</b> llama.cpp oficial com versão e checksum fixos.</p></div>
         <button class="button primary full" data-next="context">Continuar <span>→</span></button>
       </section>
 
@@ -57,13 +57,13 @@
         <div class="screen-heading"><p class="eyebrow">04 — REVISÃO</p><h2>Pronto para iniciar.</h2><p>Comece com até 2 slots. Falta de VRAM reduz slots automaticamente.</p></div>
         <div class="slots-row"><div><strong>Slots simultâneos</strong><span id="slotDescription">Definido automaticamente para este preset.</span></div><button class="switch is-on" id="automaticSlots" type="button" aria-pressed="true"><i></i><span>Auto</span></button><output id="summaryParallel">4</output></div><input id="parallel" class="range-input slots-input" type="number" min="1" max="8" aria-label="Slots simultâneos" hidden>
         <div class="review-banner"><span>Modelo</span><strong id="reviewModel">—</strong><span>Contexto</span><strong id="reviewContext">—</strong><span>Saída</span><strong id="reviewOutput">—</strong></div>
-        <details class="advanced-options"><summary>Backend e opções avançadas</summary><div class="advanced-grid"><label>Backend<select id="backend"><option value="official-layer">CUDA prebuilt · recomendado</option><option value="auto">Automático · prebuilt</option><option value="official-tensor">CUDA prebuilt · tensor experimental</option><option value="wackmall">wackMall · requer release Linux no Kairn</option><option value="ik_llama">ik_llama · compilação CUDA</option></select></label><label>Reasoning<input id="reasoning_budget" type="number" min="0" max="32768" step="256"></label><label>Temperatura<input id="temperature" type="number" min="0" max="2" step="0.05"></label><label>Top K<input id="top_k" type="number" min="0" max="200"></label><label>Top P<input id="top_p" type="number" min="0" max="1" step="0.01"></label><label>Min P<input id="min_p" type="number" min="0" max="1" step="0.01"></label><label id="mtpField">MTP<input id="mtp_tokens" type="number" min="0" max="8"></label></div></details>
+        <details class="advanced-options"><summary>Backend e opções avançadas</summary><div class="advanced-grid"><label>Backend<select id="backend"><option value="official-layer">CUDA prebuilt · recomendado</option><option value="auto">Automático · prebuilt</option><option value="official-tensor">CUDA prebuilt · tensor experimental</option><option value="wackmall">wackMall · requer release Linux no Kairn</option><option value="ik_llama">ik_llama · compilação CUDA</option></select></label><label>Reasoning<input id="reasoning_budget" type="number" min="0" max="32768" step="256"></label><label>Temperatura<input id="temperature" type="number" min="0" max="2" step="0.05"></label><label>Top K<input id="top_k" type="number" min="0" max="200"></label><label>Top P<input id="top_p" type="number" min="0" max="1" step="0.01"></label><label>Min P<input id="min_p" type="number" min="0" max="1" step="0.01"></label><label id="mtpField">Tokens de rascunho<input id="mtp_tokens" type="number" min="0" max="8"></label><label for="speculation">Decodificação especulativa<select id="speculation"><option value="auto">Automático · MTP/Draft quando disponível</option><option value="off">Desativado</option><option value="ngram">N-gram · fallback local</option></select></label></div><p class="footnote" id="cacheNote">Alterar parâmetros reutiliza o modelo nesta sessão.</p></details>
         <button class="button primary full" data-next="environment">Gerar célula GitHub <span>→</span></button>
       </section>
 
       <section class="screen" data-screen="environment" hidden>
         <div class="screen-heading"><p class="eyebrow">02 / EXECUTAR</p><h2>Uma célula. Direto do GitHub.</h2><p>Abra Kaggle, ative <b>Internet</b> e selecione <b>GPU T4 ×2</b>. Cole célula abaixo. Ela busca arquivos do Kairn, prepara ambiente e inicia API.</p></div>
-        <div class="tunnel-card"><label class="form-field"><span>Como expor API</span><select id="tunnel_mode"><option value="quick">Túnel rápido · testes sem streaming</option><option value="named">Cloudflare nomeado · agentes e streaming</option></select></label><label class="form-field" id="tunnelUrlField" hidden><span>URL pública configurada no Cloudflare</span><input id="tunnel_url" placeholder="https://llm.seudominio.com"></label><p id="tunnelHelp">Túnel rápido dispensa conta, mas não suporta SSE. Para agentes, escolha túnel nomeado.</p></div>
+        <div class="tunnel-card"><label class="form-field"><span>Como expor API</span><select id="tunnel_mode"><option value="quick">Túnel rápido · lotes de 4 s</option><option value="named">Cloudflare nomeado · agentes e streaming</option></select></label><label class="form-field" id="tunnelUrlField" hidden><span>URL pública configurada no Cloudflare</span><input id="tunnel_url" placeholder="https://llm.seudominio.com" data-i18n-placeholder="cloudflarePlaceholder"></label><p id="tunnelHelp">Túnel rápido pode entregar resposta em lotes. A conexão testa streaming antes de liberar agentes.</p></div>
         <div class="action-row"><button class="button primary" id="copyGitHub">Copiar célula GitHub</button><button class="button secondary" id="openKaggle2">Abrir Kaggle ↗</button></div><details class="code-card"><summary>Ver célula GitHub</summary><pre id="githubCode">Disponível no aplicativo desktop.</pre></details><p class="footnote">Fonte: guell11/Kairn · branch main. Requer projeto publicado. Prebuild wackMall Linux requer release gerada pelo workflow CUDA.</p><button class="button primary full" data-next="connect">Já tenho URL e chave →</button>
         <details class="advanced-options"><summary>Alternativa offline: exportar notebook completo</summary><button class="button secondary" id="exportNotebook">Salvar notebook (opcional)</button><p class="footnote">Útil antes de publicar repositório. Contém mesmas correções de CUDA.</p></details>
       </section>
@@ -83,7 +83,7 @@
       <section class="screen" data-screen="connect" hidden>
         <div class="screen-heading"><p class="eyebrow">03 / CONECTAR</p><h2>Traga sua API para cá.</h2><p>Cole dados do notebook. Verificaremos saúde e modelo antes de liberar agentes.</p></div>
         <div class="result-example"><code>BASE URL → https://…trycloudflare.com/v1</code><code>API KEY → ks_…</code></div>
-        <label class="form-field"><span>Base URL</span><input id="baseUrl" placeholder="https://…trycloudflare.com/v1" autocomplete="off"></label><label class="form-field"><span>API key</span><span class="password-wrap"><input id="apiKey" type="password" placeholder="ks_…" autocomplete="off"><button id="toggleKey" type="button" aria-label="Mostrar API key">◉</button></span></label>
+        <label class="form-field"><span>Base URL</span><input id="baseUrl" placeholder="https://…trycloudflare.com/v1" data-i18n-placeholder="baseUrlPlaceholder" autocomplete="off"></label><label class="form-field"><span>API key</span><span class="password-wrap"><input id="apiKey" type="password" placeholder="ks_…" data-i18n-placeholder="apiKeyPlaceholder" autocomplete="off"><button id="toggleKey" type="button" aria-label="Mostrar API key">◉</button></span></label>
         <div class="notice compact"><span class="notice-icon">⌁</span><p>API key fica somente em memória nesta sessão.</p></div><p class="connection-feedback" id="connectionFeedback" role="status" aria-live="polite">Aguardando URL e chave.</p><button class="button primary full" id="connectApi">Testar e conectar <span>→</span></button><button class="text-button" data-copy="smoke" type="button">Copiar smoke test</button>
       </section>
 
@@ -109,6 +109,7 @@
     </section>
   </main>
   <div class="kaggle-drawer" id="kaggleHint"><span>Kaggle aberto ao lado</span><button id="hideKaggle" type="button">Fechar painel</button></div><div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=9"></script>
+  <script src="i18n.js?v=1"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>

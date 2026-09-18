@@ -22,6 +22,9 @@ CODEX_PROFILE = "kaggle-studio"
 CODEX_TOKEN_FILE = ".kaggle-studio-token"
 CODEX_TOKEN_READER = "kaggle-studio-token.py"
 CODEX_PROFILE_FILE = "kaggle-studio.config.toml"
+CLAUDE_TOKEN_FILE = ".kaggle-studio-claude-token"
+CLAUDE_TOKEN_READER = "kaggle-studio-api-key.py"
+OPENCODE_TOKEN_FILE = ".kaggle-studio-opencode-token"
 
 # Gateway surface.  Keep client setup tied to the public gateway contract,
 # rather than to whichever upstream server happens to run in Kaggle.
@@ -185,6 +188,18 @@ def _json(path: Path) -> dict:
         return {}
 
 
+def _existing_json(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text("utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Arquivo de configuração inválido: {path}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"Arquivo de configuração deve conter objeto JSON: {path}")
+    return data
+
+
 def _jsonc(path: Path) -> dict:
     try:
         raw = path.read_text("utf-8")
@@ -199,6 +214,34 @@ def _jsonc(path: Path) -> dict:
         return data if isinstance(data, dict) else {}
     except ValueError:
         return {}
+
+
+def _existing_jsonc(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        raw = path.read_text("utf-8")
+    except OSError as exc:
+        raise ValueError(f"Não foi possível ler configuração: {path}") from exc
+    data = _jsonc(path)
+    if not data and raw.strip() not in {"", "{}"}:
+        raise ValueError(f"Arquivo de configuração inválido: {path}")
+    return data
+
+
+def _credential_reader(home: Path, token_name: str, reader_name: str) -> tuple[Path, Path]:
+    token = home / token_name
+    reader = home / reader_name
+    source = (
+        "from pathlib import Path\n"
+        "import sys\n"
+        f"value = Path({str(token)!r}).read_text(encoding='utf-8').strip()\n"
+        "if not value:\n"
+        "    raise SystemExit(1)\n"
+        "sys.stdout.write(value)\n"
+    )
+    _write(reader, source, secret=True, backup=False)
+    return token, reader
 
 
 def _upsert_managed_text(source: str, payload: str) -> str:
@@ -355,7 +398,9 @@ def configure_codex(ep: Endpoint, home: Path | None = None) -> Result:
 def configure_claude(ep: Endpoint, home: Path | None = None) -> Result:
     home = Path(home or Path.home())
     config = home / ".claude" / "settings.json"
-    data = _json(config)
+    data = _existing_json(config)
+    token, reader = _credential_reader(home / ".claude", CLAUDE_TOKEN_FILE, CLAUDE_TOKEN_READER)
+    _write(token, ep.api_key.strip() + "\n", secret=True, backup=False)
     env = data.setdefault("env", {})
     if not isinstance(env, dict):
         env = {}
@@ -369,6 +414,7 @@ def configure_claude(ep: Endpoint, home: Path | None = None) -> Result:
             "ANTHROPIC_DEFAULT_HAIKU_MODEL": ep.model,
         }
     )
+    data["apiKeyHelper"] = subprocess.list2cmdline([sys.executable, str(reader)])
     bak = _write(config, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     prompt = home / ".claude" / "CLAUDE.md"
     _write(prompt, _upsert_managed_text(prompt.read_text("utf-8") if prompt.exists() else "", managed_agent_instructions()))
@@ -376,7 +422,7 @@ def configure_claude(ep: Endpoint, home: Path | None = None) -> Result:
         "claude",
         True,
         str(config),
-        "Claude Code configurado para /v1/messages; token é injetado somente no processo aberto pelo Studio.",
+        "Claude Code configurado para /v1/messages; apiKeyHelper lê token protegido local.",
         bak,
     )
 
@@ -385,7 +431,9 @@ def configure_opencode(ep: Endpoint, home: Path | None = None) -> Result:
     home = Path(home or Path.home())
     candidates = [home / ".config" / "opencode" / "opencode.jsonc", home / ".config" / "opencode" / "opencode.json"]
     config = next((item for item in candidates if item.exists()), candidates[0])
-    data = _jsonc(config)
+    data = _existing_jsonc(config)
+    token = home / OPENCODE_TOKEN_FILE
+    _write(token, ep.api_key.strip() + "\n", secret=True, backup=False)
     data.setdefault("$schema", "https://opencode.ai/config.json")
     providers = data.setdefault("provider", {})
     if not isinstance(providers, dict):
@@ -404,7 +452,7 @@ def configure_opencode(ep: Endpoint, home: Path | None = None) -> Result:
         "options": {
             **(existing.get("options", {}) if isinstance(existing.get("options"), dict) else {}),
             "baseURL": ep.api_url,
-            "apiKey": "{env:KAGGLE_STUDIO_API_KEY}",
+            "apiKey": "{file:~/.kaggle-studio-opencode-token}",
             "timeout": 900000,
         },
         "models": models,
@@ -502,7 +550,7 @@ def _disconnect_codex(home: Path) -> Result:
 
 def _disconnect_claude(home: Path) -> Result:
     config = home / ".claude" / "settings.json"
-    data = _json(config)
+    data = _existing_json(config)
     env = data.get("env")
     if isinstance(env, dict):
         for key in (
@@ -515,15 +563,21 @@ def _disconnect_claude(home: Path) -> Result:
             env.pop(key, None)
         if not env:
             data.pop("env", None)
+    helper = subprocess.list2cmdline([sys.executable, str(home / ".claude" / CLAUDE_TOKEN_READER)])
+    if data.get("apiKeyHelper") == helper:
+        data.pop("apiKeyHelper", None)
     backup = _write(config, json.dumps(data, ensure_ascii=False, indent=2) + "\n") if config.exists() else ""
     prompt_backup = _remove_prompt_block(home / ".claude" / "CLAUDE.md")
+    for path in (home / ".claude" / CLAUDE_TOKEN_FILE, home / ".claude" / CLAUDE_TOKEN_READER):
+        if path.exists():
+            path.unlink()
     return Result("claude", True, str(config), "Configuração Claude removida.", backup or prompt_backup)
 
 
 def _disconnect_opencode(home: Path) -> Result:
     candidates = [home / ".config" / "opencode" / "opencode.jsonc", home / ".config" / "opencode" / "opencode.json"]
     config = next((item for item in candidates if item.exists()), candidates[0])
-    data = _jsonc(config)
+    data = _existing_jsonc(config)
     providers = data.get("provider")
     if isinstance(providers, dict):
         providers.pop("kaggle-studio", None)
@@ -534,6 +588,9 @@ def _disconnect_opencode(home: Path) -> Result:
             data.pop(key, None)
     backup = _write(config, json.dumps(data, ensure_ascii=False, indent=2) + "\n") if config.exists() else ""
     prompt_backup = _remove_prompt_block(config.parent / "AGENTS.md")
+    token = home / OPENCODE_TOKEN_FILE
+    if token.exists():
+        token.unlink()
     return Result("opencode", True, str(config), "Configuração OpenCode removida.", backup or prompt_backup)
 
 
@@ -643,11 +700,21 @@ def is_configured(tool: str, home: Path | None = None) -> bool:
                 and f'model_provider = "{CODEX_PROVIDER}"' in profile
             )
         if tool == "claude":
-            return _json(home / ".claude" / "settings.json").get("env", {}).get("ANTHROPIC_BASE_URL") is not None
+            data = _json(home / ".claude" / "settings.json")
+            helper = subprocess.list2cmdline([sys.executable, str(home / ".claude" / CLAUDE_TOKEN_READER)])
+            return (
+                data.get("env", {}).get("ANTHROPIC_BASE_URL") is not None
+                and data.get("apiKeyHelper") == helper
+                and (home / ".claude" / CLAUDE_TOKEN_FILE).exists()
+            )
         if tool == "opencode":
             for path in (home / ".config" / "opencode" / "opencode.jsonc", home / ".config" / "opencode" / "opencode.json"):
                 if path.exists() and "kaggle-studio" in _jsonc(path).get("provider", {}):
-                    return True
+                    provider = _jsonc(path).get("provider", {}).get("kaggle-studio", {})
+                    return (
+                        provider.get("options", {}).get("apiKey") == "{file:~/.kaggle-studio-opencode-token}"
+                        and (home / OPENCODE_TOKEN_FILE).exists()
+                    )
             return False
         if tool == "zcode":
             desktop = "kaggle-studio" in _json(home / ".zcode" / "v2" / "config.json").get("provider", {})

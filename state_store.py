@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from localization import normalize_language
 
 
 SETUP_STAGES = (
@@ -14,12 +15,14 @@ ACCELERATOR_PROFILE = "t4x2"
 
 @dataclass
 class AppState:
+    language: str = "pt-BR"
     model: str = "gemopus"
     base_url: str = ""
     context: int = 16384
     parallel: int = 2
     output: int = 8192
     mtp_tokens: int = 2
+    speculation: str = "auto"
     temperature: float = 0.6
     top_k: int = 40
     top_p: float = 0.95
@@ -78,6 +81,9 @@ class StateStore:
             state.accelerator = ACCELERATOR_PROFILE
         if not isinstance(state.parallel_auto, bool):
             state.parallel_auto = AppState().parallel_auto
+        state.language = normalize_language(state.language)
+        if state.speculation not in ("auto", "off", "ngram"):
+            state.speculation = "auto"
         return state
 
     def save(self, state: AppState) -> None:

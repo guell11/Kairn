@@ -4,6 +4,8 @@ import json
 import os
 import time
 import uuid
+import asyncio
+import contextlib
 from typing import Any
 
 import httpx
@@ -22,12 +24,72 @@ SPLIT_MODE = os.getenv("KAGGLE_SPLIT_MODE", "graph")
 CONTEXT_SIZE = int(os.getenv("KAGGLE_CONTEXT_SIZE", "0") or 0)
 SLOTS = int(os.getenv("KAGGLE_SLOTS", "0") or 0)
 STARTED_AT = time.time()
+STREAM_BATCH_SECONDS = min(10.0, max(0.25, float(os.getenv("KAGGLE_STREAM_BATCH_SECONDS", "4"))))
+STREAM_BATCH_BYTES = min(1024 * 1024, max(16 * 1024, int(os.getenv("KAGGLE_STREAM_BATCH_BYTES", str(256 * 1024)))))
+STREAM_TEST_DELAY = min(10.0, max(1.0, float(os.getenv("KAGGLE_STREAM_TEST_DELAY", "4"))))
 
 app = FastAPI(title="Kaggle Studio Universal Gateway", version="4.0")
 client = httpx.AsyncClient(
     timeout=httpx.Timeout(900.0, connect=20.0),
     limits=httpx.Limits(max_connections=256, max_keepalive_connections=64),
 )
+
+
+async def batched_stream(source, interval=STREAM_BATCH_SECONDS, max_bytes=STREAM_BATCH_BYTES):
+    """Batch one continuous upstream stream, preserving every protocol byte."""
+    if interval <= 0 or max_bytes < 1:
+        raise ValueError("Batch interval and buffer size must be positive")
+    iterator = source.__aiter__()
+    pending = bytearray()
+    deadline = None
+    task = asyncio.create_task(iterator.__anext__())
+    try:
+        while True:
+            if pending and deadline is None:
+                deadline = asyncio.get_running_loop().time() + interval
+            timeout = max(0.0, deadline - asyncio.get_running_loop().time()) if deadline is not None else None
+            if pending and timeout == 0:
+                yield bytes(pending)
+                pending.clear()
+                deadline = None
+                continue
+            done, _ = await asyncio.wait({task}, timeout=timeout)
+            if not done:
+                yield bytes(pending); pending.clear(); deadline = None
+                continue
+            try:
+                chunk = task.result()
+            except StopAsyncIteration:
+                if pending:
+                    yield bytes(pending)
+                return
+            except Exception:
+                if pending:
+                    yield bytes(pending)
+                    pending.clear()
+                raise
+            if chunk:
+                view = memoryview(chunk)
+                offset = 0
+                while offset < len(view):
+                    length = min(max_bytes - len(pending), len(view) - offset)
+                    pending.extend(view[offset:offset + length])
+                    offset += length
+                    if len(pending) == max_bytes:
+                        yield bytes(pending)
+                        pending.clear()
+                        deadline = None
+            task = asyncio.create_task(iterator.__anext__())
+    except asyncio.CancelledError:
+        raise
+    finally:
+        if not task.done():
+            task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await task
+        if hasattr(iterator, "aclose"):
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await iterator.aclose()
 
 
 def _error(message: str, status: int, error_type: str = "gateway_error") -> JSONResponse:
@@ -221,6 +283,8 @@ async def health(request: Request):
             "split": SPLIT_MODE,
             "context": CONTEXT_SIZE,
             "slots": SLOTS,
+            "max_output": MAX_OUTPUT,
+            "stream_batch_seconds": STREAM_BATCH_SECONDS,
         },
         status_code=200 if response.is_success else 503,
     )
@@ -234,6 +298,20 @@ async def models(request: Request):
         "object": "list",
         "data": [{"id": MODEL_ID, "object": "model", "owned_by": "kaggle-studio"}],
     }
+
+
+@app.get("/v1/stream-test")
+async def stream_test(request: Request):
+    """Deterministic SSE cadence check. No model inference involved."""
+    if not _authorized(request):
+        return _error("Unauthorized", 401, "authentication_error")
+
+    async def events():
+        yield b"event: stream_test\ndata: {\"seq\":1}\n\n"
+        await asyncio.sleep(STREAM_TEST_DELAY)
+        yield b"event: stream_test\ndata: {\"seq\":2,\"done\":true}\n\n"
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers={"cache-control": "no-cache, no-transform", "x-accel-buffering": "no"})
 
 
 @app.get("/metrics")
@@ -309,7 +387,8 @@ async def proxy(route: str, request: Request):
                 next_index = 1
                 buffer = b""
                 try:
-                    async for raw in response.aiter_raw():
+                    async for raw in batched_stream(response.aiter_raw()):
+                        emitted = []
                         buffer += raw
                         while b"\n\n" in buffer:
                             frame, buffer = buffer.split(b"\n\n", 1)
@@ -326,8 +405,8 @@ async def proxy(route: str, request: Request):
                             if text:
                                 if not text_started:
                                     text_started = True
-                                    yield sse("content_block_start", {"type":"content_block_start","index":text_index,"content_block":{"type":"text","text":""}})
-                                yield sse("content_block_delta", {"type":"content_block_delta","index":text_index,"delta":{"type":"text_delta","text":text}})
+                                    emitted.append(sse("content_block_start", {"type":"content_block_start","index":text_index,"content_block":{"type":"text","text":""}}))
+                                emitted.append(sse("content_block_delta", {"type":"content_block_delta","index":text_index,"delta":{"type":"text_delta","text":text}}))
                             for call in delta.get("tool_calls") or []:
                                 source_index = int(call.get("index", 0))
                                 function = call.get("function") or {}
@@ -337,26 +416,28 @@ async def proxy(route: str, request: Request):
                                              "name": function.get("name") or "tool"}
                                     next_index += 1
                                     tool_states[source_index] = state
-                                    yield sse("content_block_start", {"type":"content_block_start","index":state["index"],
-                                              "content_block":{"type":"tool_use","id":state["id"],"name":state["name"],"input":{}}})
+                                    emitted.append(sse("content_block_start", {"type":"content_block_start","index":state["index"],
+                                              "content_block":{"type":"tool_use","id":state["id"],"name":state["name"],"input":{}}}))
                                 arguments = function.get("arguments")
                                 if arguments:
-                                    yield sse("content_block_delta", {"type":"content_block_delta","index":state["index"],
-                                              "delta":{"type":"input_json_delta","partial_json":arguments}})
+                                    emitted.append(sse("content_block_delta", {"type":"content_block_delta","index":state["index"],
+                                              "delta":{"type":"input_json_delta","partial_json":arguments}}))
                             if choice.get("finish_reason"):
                                 if text_started:
-                                    yield sse("content_block_stop", {"type":"content_block_stop","index":text_index})
+                                    emitted.append(sse("content_block_stop", {"type":"content_block_stop","index":text_index}))
                                 for state in tool_states.values():
-                                    yield sse("content_block_stop", {"type":"content_block_stop","index":state["index"]})
+                                    emitted.append(sse("content_block_stop", {"type":"content_block_stop","index":state["index"]}))
                                 reason = "tool_use" if choice["finish_reason"] == "tool_calls" else ("max_tokens" if choice["finish_reason"] == "length" else "end_turn")
-                                yield sse("message_delta", {"type":"message_delta","delta":{"stop_reason":reason,"stop_sequence":None},"usage":{"output_tokens":0}})
+                                emitted.append(sse("message_delta", {"type":"message_delta","delta":{"stop_reason":reason,"stop_sequence":None},"usage":{"output_tokens":0}}))
+                        if emitted:
+                            yield b"".join(emitted)
                     yield sse("message_stop", {"type":"message_stop"})
                 finally:
                     await response.aclose()
-            return StreamingResponse(anthropic_chunks(), status_code=response.status_code, media_type="text/event-stream")
+            return StreamingResponse(anthropic_chunks(), status_code=response.status_code, media_type="text/event-stream", headers={"cache-control": "no-cache, no-transform", "x-accel-buffering": "no"})
         async def chunks():
             try:
-                async for chunk in response.aiter_raw():
+                async for chunk in batched_stream(response.aiter_raw()):
                     yield chunk
             finally:
                 await response.aclose()
@@ -365,6 +446,7 @@ async def proxy(route: str, request: Request):
             chunks(),
             status_code=response.status_code,
             media_type=content_type or "text/event-stream",
+            headers={"cache-control": "no-cache, no-transform", "x-accel-buffering": "no"},
         )
 
     content = await response.aread()

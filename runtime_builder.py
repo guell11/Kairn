@@ -11,11 +11,38 @@ from agent_prompt import AGENT_SYSTEM_PROMPT
 
 
 IK_LLAMA_COMMIT = "06e20d7ece47d78bcebaf6efec47bc291b7d3135"
+PRISM_LLAMA_COMMIT = "1a07bfa5f4144274c8f1c9963821dd9d9a51854b"
 CLOUDFLARED_VERSION = "2026.9.1"
 CLOUDFLARED_SHA256 = "03f1f25d1cc93b9ad6c60569d44060bc4f17ed97075760ed8cfca4b12dcd68cc"
 LLAMA_PREBUILT_TAG = "b11009"
 LLAMA_PREBUILT_SHA256 = "f0fdb09b03d1e6be2f9a6933613f9d5c398cc53d2a96f86515a5de93334f020e"
 LLAMA_CUDART_SHA256 = "7633219ca9deca050e913b53a8bf19dfa35233672c30f30a4ae5c4eb67a3c737"
+
+
+def _cell_text(source: str, language: str) -> str:
+    """Translate launcher copy; leave commands and upstream runtime logs intact."""
+    if language != "en":
+        return source
+    messages = {
+        "Execute somente esta célula.": "Run only this cell.",
+        "Pode ser tag ou SHA de versão publicada.": "May be a published tag or commit SHA.",
+        "Kairn indisponível no GitHub (HTTP {error.code}). Publique projeto completo e confira REF.": "Kairn unavailable on GitHub (HTTP {error.code}). Publish the complete project and check REF.",
+        "Criando venv isolado sem ensurepip:": "Creating isolated venv without ensurepip:",
+        "--python instala NO venv alvo. Ambiente Python global não é alterado.": "--python installs into the target venv. Global Python remains unchanged.",
+        "Compatibilidade com pip antigo: bootstrap direto dentro do venv.": "Older pip compatibility: bootstrap directly inside the venv.",
+        "Venv runtime pronto:": "Runtime venv ready:",
+        "Executa runtime no venv, sem injetar pacotes no kernel Kaggle.": "Run inside the venv without injecting packages into the Kaggle kernel.",
+        "Configure URL HTTPS do túnel nomeado no Studio.": "Set the named tunnel HTTPS URL in Studio.",
+        "Token do túnel Cloudflare (oculto): ": "Cloudflare tunnel token (hidden): ",
+        "Execute primeiro célula 1: preparação.": "Run cell 1 first: setup.",
+        "Runtime falhou. Veja erro e logs acima.": "Runtime failed. See the error and logs above.",
+        "Runtime, gateway e túnel encerrados.": "Runtime, gateway and tunnel stopped.",
+        "Ative Internet e GPU T4 ×2. Execute preparação, depois runtime.": "Enable Internet and GPU T4 ×2. Run setup, then runtime.",
+        "Interromper runtime encerra servidores. Túnel rápido entrega SSE em lotes de ~4 s; valide a URL antes de usar agentes. Se falhar, use túnel nomeado.": "Interrupting runtime stops the servers. Quick tunnels deliver SSE in ~4-second batches; validate the URL before using agents. If it fails, use a named tunnel.",
+    }
+    for original, translated in messages.items():
+        source = source.replace(original, translated)
+    return source
 
 
 class RuntimeBuilder:
@@ -26,13 +53,24 @@ class RuntimeBuilder:
         config = {key: value for key, value in state.public().items()
                   if key not in {"base_url", "stage"}}
         config["model"] = model["key"]
-        return '''# Kaggle: Internet ON, GPU T4 x2. Execute somente esta célula.
-import json, runpy, urllib.request, urllib.error
+        # Model-required backends are immutable at export time. This prevents
+        # a Bonsai PTQ1_0 file from silently reaching stock llama.cpp.
+        if model.get("required_backend"):
+            config["backend"] = model["required_backend"]
+        source = '''# Kaggle: Internet ON, GPU T4 x2. Execute somente esta célula.
+import hashlib, json, runpy, urllib.request, urllib.error
 from pathlib import Path
 
 REPOSITORY = "guell11/Kairn"
 REF = "main"  # Pode ser tag ou SHA de versão publicada.
 CONFIG = ''' + repr(config) + '''
+EXPECTED_MODEL_SHA256 = ''' + repr(model.get("sha256", "")) + '''
+
+def incompatible(detail):
+    english = CONFIG.get("language") == "en"
+    message = ("Kairn on GitHub is older than this launcher. Publish the complete updated project (including runtime-manifest.json), then rerun this cell. "
+               if english else "Kairn no GitHub está anterior a esta célula. Publique projeto completo atualizado (incluindo runtime-manifest.json) e execute célula novamente. ")
+    raise RuntimeError(message + detail)
 
 try:
     request = urllib.request.Request(
@@ -40,23 +78,38 @@ try:
         headers={"User-Agent": "Kairn-Kaggle"})
     with urllib.request.urlopen(request, timeout=30) as response:
         commit = json.load(response)["sha"]
+    manifest_url = f"https://raw.githubusercontent.com/{REPOSITORY}/{commit}/runtime-manifest.json"
+    try:
+        with urllib.request.urlopen(manifest_url, timeout=30) as response:
+            manifest = json.load(response)
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            incompatible(f"Commit: {commit[:12]}")
+        raise
+    entry = manifest.get("models", {}).get(CONFIG["model"], {})
+    if (manifest.get("schema") != 2 or entry.get("sha256") != EXPECTED_MODEL_SHA256
+            or CONFIG["backend"] not in manifest.get("backends", [])):
+        incompatible(f"Commit: {commit[:12]}; model: {CONFIG['model']}")
     url = f"https://raw.githubusercontent.com/{REPOSITORY}/{commit}/kaggle/bootstrap.py"
     with urllib.request.urlopen(url, timeout=60) as response:
         source = response.read()
 except urllib.error.HTTPError as error:
     raise RuntimeError(f"Kairn indisponível no GitHub (HTTP {error.code}). Publique projeto completo e confira REF.") from error
 
+if hashlib.sha256(source).hexdigest() != manifest.get("files", {}).get("kaggle/bootstrap.py"):
+    incompatible("bootstrap.py checksum mismatch")
 compile(source, "bootstrap.py", "exec")
 folder = Path("/kaggle/working/.kairn") / commit
 folder.mkdir(parents=True, exist_ok=True)
 bootstrap = folder / "bootstrap.py"
 bootstrap.write_bytes(source)
 runpy.run_path(str(bootstrap), run_name="__main__", init_globals={
-    "CONFIG": CONFIG, "KAIRN_REPOSITORY": REPOSITORY, "KAIRN_COMMIT": commit})
+    "CONFIG": CONFIG, "KAIRN_REPOSITORY": REPOSITORY, "KAIRN_COMMIT": commit, "KAIRN_MANIFEST": manifest})
 '''
+        return _cell_text(source, getattr(state, "language", "pt-BR"))
 
-    def install_cell(self) -> str:
-        return '''import os, shutil, subprocess, sys, venv
+    def install_cell(self, language: str = "pt-BR") -> str:
+        source = '''import os, shutil, subprocess, sys, venv
 from pathlib import Path
 
 RUNTIME_VENV = Path("/kaggle/working/.kaggle-runtime-venv")
@@ -101,6 +154,7 @@ if result.returncode:
 subprocess.check_call([str(RUNTIME_PYTHON), "-c", "import fastapi,httpx,huggingface_hub,uvicorn,requests"], env=CLEAN_ENV)
 print("Venv runtime pronto:", RUNTIME_PYTHON)
 '''
+        return _cell_text(source, language)
 
     @staticmethod
     def _between(source: str, start: str, end: str, replacement: str) -> str:
@@ -136,6 +190,7 @@ if not RUNTIME_PYTHON.exists() or not RUNTIME_SITE_PACKAGES.exists():
     raise RuntimeError("Venv runtime ausente. Execute primeiro a célula de instalação.")
 _runtime_sys.path.insert(0, str(RUNTIME_SITE_PACKAGES))
 IK_LLAMA_COMMIT = "06e20d7ece47d78bcebaf6efec47bc291b7d3135"
+PRISM_LLAMA_COMMIT = "1a07bfa5f4144274c8f1c9963821dd9d9a51854b"
 CLOUDFLARED_VERSION = "2026.9.1"
 CLOUDFLARED_SHA256 = "03f1f25d1cc93b9ad6c60569d44060bc4f17ed97075760ed8cfca4b12dcd68cc"
 LLAMA_PREBUILT_TAG = "b11009"
@@ -154,7 +209,7 @@ LLAMA_CUDART_SHA256 = "7633219ca9deca050e913b53a8bf19dfa35233672c30f30a4ae5c4eb6
 # COMPILAR BACKEND DE INFERÊNCIA
 # =====================================================================
 backend = BACKEND_FAMILY if BACKEND_FAMILY != "auto" else "official-layer"
-if backend not in {"ik_llama", "official-layer", "official-tensor"}:
+if backend not in {"ik_llama", "official-layer", "official-tensor", "wackmall", "prism-ml"}:
     raise ValueError(f"Backend inválido: {backend}")
 
 def cuda_architectures():
@@ -184,6 +239,13 @@ if backend == "ik_llama":
         "-DLLAMA_CURL=OFF",
         "-DBUILD_SHARED_LIBS=OFF",
     ]
+elif backend == "prism-ml":
+    # Bonsai 2 PTQ1_0 requires PrismML's Hadamard/PTQ kernels; stock llama.cpp is incompatible.
+    repo_url, SPLIT_MODE = "https://github.com/PrismML-Eng/llama.cpp", "layer"
+    cmake_extra = [
+        "-DLLAMA_BUILD_SERVER=ON", "-DLLAMA_BUILD_TESTS=OFF",
+        "-DLLAMA_BUILD_EXAMPLES=OFF", "-DLLAMA_CURL=OFF", "-DBUILD_SHARED_LIBS=OFF",
+    ]
 else:
     repo_url = "https://github.com/ggml-org/llama.cpp"
     SPLIT_MODE = "tensor" if backend == "official-tensor" else "layer"
@@ -198,15 +260,16 @@ if source_dir.exists() and (source_dir / ".git").exists():
         current_commit = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=source_dir, text=True
         ).strip()
-        reuse_checkout = backend == "ik_llama" and current_commit == IK_LLAMA_COMMIT
+        reuse_checkout = ((backend == "ik_llama" and current_commit == IK_LLAMA_COMMIT)
+                          or (backend == "prism-ml" and current_commit == PRISM_LLAMA_COMMIT))
     except Exception:
         pass
 if reuse_checkout:
     print("♻️ Build parcial encontrado; retomando sem recompilar objetos prontos")
-elif backend == "ik_llama":
+elif backend in {"ik_llama", "prism-ml"}:
     shutil.rmtree(source_dir, ignore_errors=True)
     run(["git", "clone", "--filter=blob:none", repo_url, str(source_dir)])
-    run(["git", "checkout", "--detach", IK_LLAMA_COMMIT], cwd=source_dir)
+    run(["git", "checkout", "--detach", IK_LLAMA_COMMIT if backend == "ik_llama" else PRISM_LLAMA_COMMIT], cwd=source_dir)
 else:
     shutil.rmtree(source_dir, ignore_errors=True)
     run(["git", "clone", "--depth", "1", repo_url, str(source_dir)])
@@ -230,7 +293,7 @@ if compiled_server is None:
 RUNTIME_SERVER = ROOT / "llama-server"
 shutil.copy2(compiled_server, RUNTIME_SERVER)
 RUNTIME_SERVER.chmod(RUNTIME_SERVER.stat().st_mode | stat.S_IEXEC)
-(ROOT / "llama-server.build-id").write_text(f"{backend}|{IK_LLAMA_COMMIT if backend == 'ik_llama' else 'upstream'}")
+(ROOT / "llama-server.build-id").write_text(f"{backend}|{IK_LLAMA_COMMIT if backend == 'ik_llama' else PRISM_LLAMA_COMMIT if backend == 'prism-ml' else 'upstream'}")
 probe = subprocess.run([str(RUNTIME_SERVER), "--help"], capture_output=True, text=True, timeout=30)
 if probe.returncode != 0:
     raise RuntimeError("llama-server falhou --help:\\n" + (probe.stderr or probe.stdout)[-4000:])
@@ -258,6 +321,12 @@ def _download_verified(url, name, sha256):
         archive.unlink()
     partial = Path(str(archive) + ".part")
     offset = partial.stat().st_size if partial.exists() else 0
+    if offset and expected_size is not None and offset >= expected_size:
+        if valid(partial):
+            partial.replace(destination)
+            return destination
+        partial.unlink()
+        offset = 0
     headers = {"Range": f"bytes={offset}-"} if offset else {}
     headers["User-Agent"] = "Kaggle-Studio/4"
     request = _runtime_urllib.Request(url, headers=headers)
@@ -357,7 +426,7 @@ print("✅ llama-server CUDA prebuilt validado")'''
 backend = BACKEND_FAMILY if BACKEND_FAMILY != "auto" else "official-layer"
 RUNTIME_SERVER = ROOT / (f"llama-prebuilt-{LLAMA_PREBUILT_TAG}/llama-server" if backend.startswith("official-") else "llama-server")
 BUILD_ID = ROOT / "llama-server.build-id"
-expected_build_id = f"{backend}|{IK_LLAMA_COMMIT if backend == 'ik_llama' else LLAMA_PREBUILT_TAG}"
+expected_build_id = f"{backend}|{IK_LLAMA_COMMIT if backend == 'ik_llama' else PRISM_LLAMA_COMMIT if backend == 'prism-ml' else LLAMA_PREBUILT_TAG}"
 if backend.startswith("official-") and RUNTIME_SERVER.exists():
     # Repair previous launcher in place; keep verified GGUF and CUDA archives.
     repair_official_launcher(RUNTIME_SERVER.parent)
@@ -390,8 +459,13 @@ def remote_file_metadata(repo, filename, revision):
     for sibling in info.siblings:
         if sibling.rfilename == filename:
             lfs = getattr(sibling, "lfs", None) or {}
+            if not isinstance(lfs, dict):
+                lfs = {"size": getattr(lfs, "size", None), "oid": getattr(lfs, "oid", None),
+                       "sha256": getattr(lfs, "sha256", None)}
             size = getattr(sibling, "size", None) or lfs.get("size")
-            return {"size": int(size) if size is not None else None, "sha256": lfs.get("sha256")}
+            # HF LFS oid is the SHA-256 payload digest when sha256 is absent.
+            digest = lfs.get("sha256") or lfs.get("oid")
+            return {"size": int(size) if size is not None else None, "sha256": digest}
     raise RuntimeError(f"Arquivo remoto não encontrado: {filename}")'''
         source = self._between(source, "# =====================================================================\n# INFO REMOTA DO ARQUIVO", "# =====================================================================\n# ESCOLHER GGUF", metadata)
         downloader = '''# =====================================================================
@@ -449,6 +523,14 @@ def direct_download(info):
     print("✅ Download validado:", destination)
     return destination'''
         source = self._between(source, "# =====================================================================\n# DOWNLOAD DIRETO", "# =====================================================================\n# SELECIONAR MODELOS", downloader)
+        # Disk budget belongs to each missing download. Cached weights need no
+        # additional model-sized allocation, including after parameter changes.
+        source = self._between(source, "# =====================================================================\n# CHECAR ESPAÇO DOS DOIS JUNTOS", "# =====================================================================\n# BAIXAR", "# Each download checks remaining bytes after validating the cache.\n")
+        source = self._once(source, '    api = HfApi(', '''    if role == "model" and explicit_file and MODEL_SIZE and MODEL_SHA256:
+        return {"repo": repo, "filename": explicit_file, "revision": revision,
+                "size": MODEL_SIZE, "sha256": MODEL_SHA256}
+
+    api = HfApi(''')
 
         server = '''# fallback automático para layer split foi removido: graph só reduz slots após OOM.
 # =====================================================================
@@ -574,10 +656,13 @@ if USE_CLOUDFLARE:
         source = source[:start] + helpers + '''
 server_help = subprocess.check_output([str(LLAMA_SERVER), "--help"], text=True, stderr=subprocess.STDOUT)
 def make_llama_command(slots):
-    return llama_command(LLAMA_SERVER, model_path, MODEL_REFERENCE,
+    command = llama_command(LLAMA_SERVER, model_path, MODEL_REFERENCE,
         CONTEXT_PER_GENERATION, slots, SPLIT_MODE, server_help,
         DEFAULT_TEMPERATURE, DEFAULT_TOP_K, DEFAULT_TOP_P, DEFAULT_MIN_P,
-        DEFAULT_REASONING_BUDGET)
+        DEFAULT_REASONING_BUDGET, SPECULATION, MTP_TOKENS)
+    method = command[command.index("--spec-type") + 1] if "--spec-type" in command else "off"
+    print(f"Speculative decoding: {method} (requested: {SPECULATION})", flush=True)
+    return command
 
 ''' + source[end:]
         source = source.replace('slot_attempts = [MAX_CONCURRENT_GENERATIONS]\nif len(gpu_lines) == 2:\n    while slot_attempts[-1] > 1:\n        slot_attempts.append(max(1, slot_attempts[-1] // 2))', 'slot_attempts = retry_slots(MAX_CONCURRENT_GENERATIONS)')
@@ -599,7 +684,7 @@ def make_llama_command(slots):
     tunnel_command += ["run"] if named_tunnel else ["--url", gateway_url]
     cloudflare_process = subprocess.Popen(tunnel_command, stdout=cf_log, stderr=subprocess.STDOUT)
     if not named_tunnel:
-        print("AVISO: Quick Tunnel não suporta SSE. Para agentes, configure túnel nomeado.")''')
+        print("AVISO: Quick Tunnel envia SSE em lotes de ~4 s; valide /health e /v1/models. Se falhar, configure túnel nomeado.")''')
         source = source.replace('    if not public_url: raise RuntimeError', '    if named_tunnel:\n        public_url = os.environ["KAGGLE_TUNNEL_URL"].rstrip("/").removesuffix("/v1")\n    if not public_url: raise RuntimeError')
         source = source.replace('    for _ in range(120):\n        match', '    for _ in range(0 if named_tunnel else 120):\n        match')
         return source
@@ -610,7 +695,8 @@ def make_llama_command(slots):
         key = api_key.strip() or ("ks_" + secrets.token_urlsafe(24))
         source = self._patch_runtime((self.root / "kaggle_runtime_template.py").read_text("utf-8"))
         gateway = base64.b64encode((self.root / "kaggle_gateway.py").read_bytes()).decode("ascii")
-        values = {"MODEL": model["source"], "MTP": model.get("mtp", ""), "MODEL_REFERENCE": model["model_id"], "API_KEY": key, "CONTEXT_PER_GENERATION": int(state.context), "MAX_CONCURRENT_GENERATIONS": int(state.parallel), "MAX_OUTPUT_TOKENS": int(state.output), "MTP_TOKENS": int(state.mtp_tokens), "DEFAULT_REASONING_BUDGET": int(state.reasoning_budget), "DEFAULT_TEMPERATURE": float(state.temperature), "DEFAULT_TOP_K": int(state.top_k), "DEFAULT_TOP_P": float(state.top_p), "DEFAULT_MIN_P": float(state.min_p), "BACKEND_FAMILY": state.backend, "AGENT_SYSTEM_PROMPT": AGENT_SYSTEM_PROMPT, "UNIVERSAL_GATEWAY_B64": gateway}
+        effective_backend = model.get("required_backend") or state.backend
+        values = {"MODEL": model["source"], "MODEL_SIZE": model.get("size_bytes"), "MODEL_SHA256": model.get("sha256", ""), "MTP": model.get("mtp", ""), "MODEL_REFERENCE": model["model_id"], "API_KEY": key, "CONTEXT_PER_GENERATION": int(state.context), "MAX_CONCURRENT_GENERATIONS": int(state.parallel), "MAX_OUTPUT_TOKENS": int(state.output), "MTP_TOKENS": int(state.mtp_tokens), "SPECULATION": getattr(state, "speculation", "auto"), "DEFAULT_REASONING_BUDGET": int(state.reasoning_budget), "DEFAULT_TEMPERATURE": float(state.temperature), "DEFAULT_TOP_K": int(state.top_k), "DEFAULT_TOP_P": float(state.top_p), "DEFAULT_MIN_P": float(state.min_p), "BACKEND_FAMILY": effective_backend, "AGENT_SYSTEM_PROMPT": AGENT_SYSTEM_PROMPT, "UNIVERSAL_GATEWAY_B64": gateway}
         for name, value in values.items():
             source, count = re.subn(rf"^{re.escape(name)}\s*=\s*.*$", lambda _m, text=f"{name} = {value!r}": text, source, count=1, flags=re.M)
             if count != 1: raise RuntimeError(f"Runtime template is missing configurable field: {name}")
@@ -619,7 +705,7 @@ def make_llama_command(slots):
     def runtime_cell(self, model: dict, state, api_key: str) -> str:
         source = self.runtime_source(model, state, api_key)
         encoded = base64.b64encode(source.encode("utf-8")).decode("ascii")
-        return '''# Executa runtime no venv, sem injetar pacotes no kernel Kaggle.
+        cell_source = '''# Executa runtime no venv, sem injetar pacotes no kernel Kaggle.
 import base64, os, subprocess
 from pathlib import Path
 runtime_file = Path("/kaggle/working/kaggle_studio_runtime.py")
@@ -656,6 +742,7 @@ finally:
         os.killpg(process.pid, signal.SIGKILL)
         process.wait()
 '''
+        return _cell_text(cell_source, getattr(state, "language", "pt-BR"))
 
     def notebook(self, model: dict, state) -> str:
         code = self.runtime_cell(model, state, "__RUNTIME_KEY__")
@@ -669,8 +756,10 @@ finally:
             result = {"cell_type": kind, "id": secrets.token_hex(4), "metadata": {}, "source": text.splitlines(True)}
             if kind == "code": result.update(execution_count=None, outputs=[])
             return result
+        language = getattr(state, "language", "pt-BR")
+        instructions = _cell_text("# Kaggle Studio\nAtive Internet e GPU T4 ×2. Execute preparação, depois runtime.\nInterromper runtime encerra servidores. Túnel rápido entrega SSE em lotes de ~4 s; valide /health, /v1/models e uma requisição real stream=true antes de usar agentes. Se streaming falhar, use túnel nomeado.\n", language)
         return json.dumps({"nbformat": 4, "nbformat_minor": 5,
             "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
                          "language_info": {"name": "python"}},
-            "cells": [cell("markdown", "# Kaggle Studio\nAtive Internet e GPU T4 ×2. Execute preparação, depois runtime.\nInterromper runtime encerra servidores. Túnel rápido serve para testes sem SSE; use túnel nomeado para agentes.\n"),
-                      cell("code", self.install_cell()), cell("code", code)]}, ensure_ascii=False, indent=2)
+            "cells": [cell("markdown", instructions),
+                      cell("code", self.install_cell(language)), cell("code", code)]}, ensure_ascii=False, indent=2)
