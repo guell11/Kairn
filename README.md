@@ -2,7 +2,11 @@
 
 <!-- HERO / LOGO -->
 
-<img src="assets/kairn-hero.svg" width="900" alt="Kairn">
+
+
+https://github.com/user-attachments/assets/b56af5f6-3d62-4396-b36e-b2ca61e14109
+
+
 
 <br>
 
