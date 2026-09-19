@@ -1,11 +1,11 @@
-# Kaggle: Internet ON, GPU T4 x2. Execute somente esta célula.
+# Kaggle: Internet ON, GPU T4 x2. Run only this cell.
 import hashlib, json, runpy, urllib.request, urllib.error
 from pathlib import Path
 
 REPOSITORY = "guell11/Kairn"
-REF = "main"  # Pode ser tag ou SHA de versão publicada.
-CONFIG = {'language': 'pt-BR', 'model': 'gemopus', 'context': 16384, 'parallel': 2, 'output': 8192, 'mtp_tokens': 2, 'speculation': 'auto', 'temperature': 0.6, 'top_k': 40, 'top_p': 0.95, 'min_p': 0.05, 'backend': 'official-layer', 'reasoning_budget': 3072, 'accelerator': 't4x2', 'parallel_auto': True, 'tunnel_mode': 'quick', 'tunnel_url': ''}
-EXPECTED_MODEL_SHA256 = '2037b8c978db6c8b947d10e34a70f410dde6301919c6040624fdda50647f7940'
+REF = "main"  # May be a published tag or commit SHA.
+CONFIG = {'language': 'en', 'model': 'bonsai-abliterated', 'context': 16384, 'parallel': 1, 'output': 8192, 'mtp_tokens': 2, 'speculation': 'auto', 'temperature': 0.6, 'top_k': 40, 'top_p': 0.95, 'min_p': 0.05, 'backend': 'prism-ml', 'reasoning_budget': 3072, 'accelerator': 't4x2', 'parallel_auto': True, 'tunnel_mode': 'quick', 'tunnel_url': ''}
+EXPECTED_MODEL_SHA256 = '94dd53cbad55db5a515f245887c9f0317484502a451ccc0424c7d7788b52900a'
 
 def incompatible(detail):
     english = CONFIG.get("language") == "en"
@@ -35,7 +35,7 @@ try:
     with urllib.request.urlopen(url, timeout=60) as response:
         source = response.read()
 except urllib.error.HTTPError as error:
-    raise RuntimeError(f"Kairn indisponível no GitHub (HTTP {error.code}). Publique projeto completo e confira REF.") from error
+    raise RuntimeError(f"Kairn unavailable on GitHub (HTTP {error.code}). Publish the complete project and check REF.") from error
 
 if hashlib.sha256(source).hexdigest() != manifest.get("files", {}).get("kaggle/bootstrap.py"):
     incompatible("bootstrap.py checksum mismatch")

@@ -4,8 +4,8 @@ from pathlib import Path
 
 REPOSITORY = "guell11/Kairn"
 REF = "main"  # Pode ser tag ou SHA de versão publicada.
-CONFIG = {'language': 'pt-BR', 'model': 'gemopus', 'context': 16384, 'parallel': 2, 'output': 8192, 'mtp_tokens': 2, 'speculation': 'auto', 'temperature': 0.6, 'top_k': 40, 'top_p': 0.95, 'min_p': 0.05, 'backend': 'official-layer', 'reasoning_budget': 3072, 'accelerator': 't4x2', 'parallel_auto': True, 'tunnel_mode': 'quick', 'tunnel_url': ''}
-EXPECTED_MODEL_SHA256 = '2037b8c978db6c8b947d10e34a70f410dde6301919c6040624fdda50647f7940'
+CONFIG = {'language': 'pt-BR', 'model': 'bonsai-abliterated', 'context': 16384, 'parallel': 1, 'output': 8192, 'mtp_tokens': 2, 'speculation': 'auto', 'temperature': 0.6, 'top_k': 40, 'top_p': 0.95, 'min_p': 0.05, 'backend': 'prism-ml', 'reasoning_budget': 3072, 'accelerator': 't4x2', 'parallel_auto': True, 'tunnel_mode': 'quick', 'tunnel_url': ''}
+EXPECTED_MODEL_SHA256 = '94dd53cbad55db5a515f245887c9f0317484502a451ccc0424c7d7788b52900a'
 
 def incompatible(detail):
     english = CONFIG.get("language") == "en"

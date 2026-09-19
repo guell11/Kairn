@@ -2,6 +2,21 @@
 .venv-test/
 .browser/
 .kaggle-studio/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*token*
+*credentials*
+Cookies*
+History*
+WebStorage/
+IndexedDB/
+Local Storage/
+Session Storage/
 __pycache__/
 *.pyc
 *.bak

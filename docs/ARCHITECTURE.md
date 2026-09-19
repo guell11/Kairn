@@ -15,7 +15,7 @@ O gateway não tenta reimplementar todo o protocolo de cada cliente. Os servidor
 
 `main.py` mantém a chave apenas em memória, persiste preferências não-secretas em `.kaggle-studio/state.json`, gera o runtime com `RuntimeBuilder` e instala configurações locais com `integrations.py`.
 
-A SPA em `ui/` conversa com Python exclusivamente por Qt WebChannel. O navegador Kaggle usa um `QWebEngineProfile` persistente para manter login/cookies, mas começa recolhido e só aparece quando o usuário pede.
+A SPA em `ui/` conversa com Python exclusivamente por Qt WebChannel. O navegador Kaggle usa perfil temporário, sem persistir login, cookies, OAuth, histórico, armazenamento local ou tokens de sessão no projeto.
 
 ## Backends
 
