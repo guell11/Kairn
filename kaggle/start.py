@@ -7,6 +7,10 @@ REF = "main"  # Pode ser tag ou SHA de versão publicada.
 CONFIG = {'language': 'pt-BR', 'model': 'gemopus', 'context': 16384, 'parallel': 2, 'output': 8192, 'mtp_tokens': 2, 'speculation': 'auto', 'temperature': 0.6, 'top_k': 40, 'top_p': 0.95, 'min_p': 0.05, 'backend': 'official-layer', 'reasoning_budget': 3072, 'accelerator': 't4x2', 'parallel_auto': True, 'tunnel_mode': 'quick', 'tunnel_url': ''}
 EXPECTED_MODEL_SHA256 = '2037b8c978db6c8b947d10e34a70f410dde6301919c6040624fdda50647f7940'
 
+def source_sha256(payload):
+    payload = payload.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(payload).hexdigest()
+
 def incompatible(detail):
     english = CONFIG.get("language") == "en"
     message = ("Kairn on GitHub is older than this launcher. Publish the complete updated project (including runtime-manifest.json), then rerun this cell. "
@@ -37,7 +41,7 @@ try:
 except urllib.error.HTTPError as error:
     raise RuntimeError(f"Kairn indisponível no GitHub (HTTP {error.code}). Publique projeto completo e confira REF.") from error
 
-if hashlib.sha256(source).hexdigest() != manifest.get("files", {}).get("kaggle/bootstrap.py"):
+if source_sha256(source) != manifest.get("files", {}).get("kaggle/bootstrap.py"):
     incompatible("bootstrap.py checksum mismatch")
 compile(source, "bootstrap.py", "exec")
 folder = Path("/kaggle/working/.kairn") / commit

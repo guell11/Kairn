@@ -10,13 +10,19 @@ from kaggle.bootstrap import RUNTIME_FILES
 from models_catalog import MODELS
 
 
+def text_sha256(path):
+    """Hash repository text independent of Windows/Git line endings."""
+    content = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(content).hexdigest()
+
+
 def manifest(root=ROOT):
     return {
         "schema": 2,
         "backends": ["auto", "official-layer", "official-tensor", "ik_llama", "wackmall", "prism-ml"],
         "models": {key: {"sha256": value["sha256"], "backend": value["backend"]}
                    for key, value in MODELS.items()},
-        "files": {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
+        "files": {name: text_sha256(root / name)
                   for name in (*RUNTIME_FILES, "kaggle/bootstrap.py")},
     }
 

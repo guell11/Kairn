@@ -21,6 +21,11 @@ def message(language, portuguese, english):
     return english if language == "en" else portuguese
 
 
+def source_sha256(content):
+    content = content.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(content).hexdigest()
+
+
 def fetch_runtime(repository, commit, destination, language="pt-BR", manifest=None):
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError(message(language, "Repositório inválido.", "Invalid repository."))
@@ -36,7 +41,7 @@ def fetch_runtime(repository, commit, destination, language="pt-BR", manifest=No
             raise RuntimeError(message(language,
                 f"Arquivo {filename} indisponível no GitHub (HTTP {exc.code}). Publique projeto completo no Kairn.",
                 f"File {filename} unavailable on GitHub (HTTP {exc.code}). Publish the complete project to Kairn.")) from exc
-        if manifest is not None and hashlib.sha256(content).hexdigest() != manifest.get("files", {}).get(filename):
+        if manifest is not None and source_sha256(content) != manifest.get("files", {}).get(filename):
             raise RuntimeError(message(language,
                 f"Arquivos publicados incompatíveis: {filename}. Gere runtime-manifest.json e publique projeto completo.",
                 f"Published files do not match: {filename}. Regenerate runtime-manifest.json and publish the complete project."))

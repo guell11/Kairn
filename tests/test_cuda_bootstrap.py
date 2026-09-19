@@ -8,7 +8,7 @@ import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
-from kaggle.bootstrap import RUNTIME_FILES, fetch_runtime
+from kaggle.bootstrap import RUNTIME_FILES, fetch_runtime, source_sha256
 from models_catalog import MODELS
 from prebuilt_support import cuda_device_ids, require_cuda_devices, write_backend_launcher, install_wackmall
 from runtime_builder import RuntimeBuilder
@@ -55,6 +55,9 @@ class CudaTests(unittest.TestCase):
 
 
 class BootstrapTests(unittest.TestCase):
+    def test_source_integrity_is_independent_of_git_line_endings(self):
+        self.assertEqual(source_sha256(b"one\r\ntwo\r\n"), source_sha256(b"one\ntwo\n"))
+
     def test_downloaded_runtime_imports_without_desktop_checkout(self):
         def fetch(url, **kwargs):
             return io.BytesIO((ROOT / url.rsplit("/", 1)[-1]).read_bytes())

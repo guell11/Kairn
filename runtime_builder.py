@@ -66,6 +66,10 @@ REF = "main"  # Pode ser tag ou SHA de versão publicada.
 CONFIG = ''' + repr(config) + '''
 EXPECTED_MODEL_SHA256 = ''' + repr(model.get("sha256", "")) + '''
 
+def source_sha256(payload):
+    payload = payload.replace(b"\\r\\n", b"\\n").replace(b"\\r", b"\\n")
+    return hashlib.sha256(payload).hexdigest()
+
 def incompatible(detail):
     english = CONFIG.get("language") == "en"
     message = ("Kairn on GitHub is older than this launcher. Publish the complete updated project (including runtime-manifest.json), then rerun this cell. "
@@ -96,7 +100,7 @@ try:
 except urllib.error.HTTPError as error:
     raise RuntimeError(f"Kairn indisponível no GitHub (HTTP {error.code}). Publique projeto completo e confira REF.") from error
 
-if hashlib.sha256(source).hexdigest() != manifest.get("files", {}).get("kaggle/bootstrap.py"):
+if source_sha256(source) != manifest.get("files", {}).get("kaggle/bootstrap.py"):
     incompatible("bootstrap.py checksum mismatch")
 compile(source, "bootstrap.py", "exec")
 folder = Path("/kaggle/working/.kairn") / commit
